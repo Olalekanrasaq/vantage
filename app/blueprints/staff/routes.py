@@ -1,12 +1,15 @@
 from datetime import date, timedelta
-from flask import render_template, abort, redirect, url_for, flash, request
+from flask import render_template, abort, redirect, url_for, flash, request, current_app, Response
 from flask_login import login_required, current_user
 from functools import wraps
 
 from app.blueprints.staff import staff_bp
 from app.extensions import db
-from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask
+from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask, FieldVisit, Business
 from app.blueprints.manager.routes import _get_dashboard_metrics, _get_dashboard_tables
+
+import os
+from werkzeug.utils import secure_filename
 
 
 def staff_required(f):
@@ -167,3 +170,151 @@ def update_recovery_task(task_id):
         flash("Recovery task status updated.", "success")
 
     return redirect(url_for("staff.dashboard"))
+
+@staff_bp.route("/visits", methods=["GET", "POST"])
+@login_required
+@staff_required
+def visits():
+    today = date.today()
+    assigned_businesses = current_user.assigned_businesses
+
+    if request.method == "POST":
+        business_id = request.form.get("business_id", type=int)
+        purpose = request.form.get("purpose", "").strip()
+        issue = request.form.get("issue", "").strip()
+        action_taken = request.form.get("action_taken", "").strip()
+        result = request.form.get("result", "Pending")
+        next_follow_up_str = request.form.get("next_follow_up", "").strip()
+
+        next_follow_up = None
+        if next_follow_up_str:
+            try:
+                next_follow_up = date.fromisoformat(next_follow_up_str)
+            except ValueError:
+                pass
+
+        if not business_id or not purpose:
+            flash("Business and purpose are required.", "error")
+            return redirect(url_for("staff.visits"))
+
+        # Handle image upload
+        image_filename = None
+        file = request.files.get("visit_image")
+        if file and file.filename:
+            ext = file.filename.rsplit(".", 1)[1].lower() if "." in file.filename else ""
+            if ext in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
+                filename = secure_filename(f"visit_{current_user.id}_{today}_{file.filename}")
+                upload_folder = current_app.config["VISIT_UPLOAD_FOLDER"]
+                os.makedirs(upload_folder, exist_ok=True)
+                file.save(os.path.join(upload_folder, filename))
+                image_filename = filename
+            else:
+                flash("Invalid image format. Allowed formats: png, jpg, jpeg, webp.", "error")
+                return redirect(url_for("staff.visits"))
+
+        visit = FieldVisit(
+            manager_id=current_user.manager_id,
+            staff_id=current_user.id,
+            business_id=business_id,
+            visit_date=today,
+            purpose=purpose,
+            issue=issue,
+            action_taken=action_taken,
+            result=result,
+            next_follow_up=next_follow_up,
+            image_filename=image_filename
+        )
+        db.session.add(visit)
+        db.session.commit()
+
+        flash("Field visit logged successfully.", "success")
+        return redirect(url_for("staff.visits"))
+
+    staff_visits = FieldVisit.query.filter_by(staff_id=current_user.id).order_by(FieldVisit.visit_date.desc()).all()
+
+    return render_template(
+        "staff/visits.html",
+        visits=staff_visits,
+        assigned_businesses=assigned_businesses,
+        today=today
+    )
+
+@staff_bp.route("/businesses")
+@login_required
+@staff_required
+def businesses():
+    today = date.today()
+    latest_date = today - timedelta(days=1)
+    date_2_days_ago = today - timedelta(days=2)
+
+    search = request.args.get("search", "").strip()
+    ntt_only = request.args.get("ntt_only", "")
+    target_met_only = request.args.get("target_met_only", "")
+    target_not_met_only = request.args.get("target_not_met_only", "")
+    download = request.args.get("download", "")
+
+    # Get names of businesses assigned specifically to this staff member
+    assigned_names = [b.name for b in current_user.assigned_businesses]
+
+    if not assigned_names:
+        if download == "csv":
+            return Response("No assigned businesses found\n", mimetype="text/csv")
+        return render_template("staff/businesses.html", weekly_rows=[], search=search, ntt_only=ntt_only, target_met_only=target_met_only, target_not_met_only=target_not_met_only, latest_date=latest_date)
+
+    if not WeeklyReport.query.filter_by(manager_id=current_user.manager_id, report_date=latest_date).first():
+        latest_date = date_2_days_ago
+
+    query = db.session.query(WeeklyReport).filter(
+        WeeklyReport.manager_id == current_user.manager_id,
+        WeeklyReport.report_date == latest_date,
+        WeeklyReport.business_name.in_(assigned_names)
+    )
+
+    if search:
+        query = query.filter(WeeklyReport.business_name.ilike(f"%{search}%"))
+
+    if target_met_only:
+        query = query.filter(db.func.lower(WeeklyReport.target_met) == "true")
+    elif target_not_met_only:
+        query = query.filter(db.func.lower(WeeklyReport.target_met) != "true")
+
+    weekly_rows = query.order_by(WeeklyReport.payment_value.desc()).all()
+
+    if ntt_only:
+        ntt_names = {
+            r.business_name for r in
+            NTTReport.query.filter_by(manager_id=current_user.manager_id, report_date=latest_date).all()
+        }
+        weekly_rows = [r for r in weekly_rows if r.business_name in ntt_names]
+
+    # --- DOWNLOAD LOGIC ---
+    if download == "csv":
+        def generate_csv():
+            yield "Business Name,Value (NGN),Volume,Target Met,Days Inactive\n"
+            for r in weekly_rows:
+                name = f'"{r.business_name}"'
+                val = r.payment_value or 0
+                vol = r.payment_vol or 0
+                t_met = r.target_met or 'False'
+                days = r.days_last_transact or ''
+                yield f"{name},{val},{vol},{t_met},{days}\n"
+
+        return Response(
+            generate_csv(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment;filename=my_assigned_businesses_{latest_date}.csv"}
+        )
+
+    all_businesses = Business.query.filter_by(manager_id=current_user.manager_id, is_active=True).all()
+    biz_map = {b.name: b for b in all_businesses}
+
+    return render_template(
+        "staff/businesses.html",
+        weekly_rows=weekly_rows,
+        biz_map=biz_map,
+        search=search,
+        ntt_only=ntt_only,
+        target_met_only=target_met_only,
+        target_not_met_only=target_not_met_only,
+        latest_date=latest_date,
+    )

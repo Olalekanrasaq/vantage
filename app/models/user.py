@@ -69,6 +69,8 @@ class BusinessManager(UserMixin, db.Model):
                                 cascade="all, delete-orphan")
     recovery_tasks = db.relationship("RecoveryTask", back_populates="manager", 
                                 cascade="all, delete-orphan")
+    field_visits = db.relationship("FieldVisit", back_populates="manager", 
+                                cascade="all, delete-orphan")
 
     def get_id(self):
         return f"bm-{self.id}"

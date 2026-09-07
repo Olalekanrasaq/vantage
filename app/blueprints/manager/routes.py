@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from flask import render_template, redirect, url_for, request, flash, current_app
+from flask import render_template, redirect, url_for, request, flash, current_app, Response
 from flask_login import login_required, current_user
 from flask import abort
 from functools import wraps
@@ -9,7 +9,8 @@ from app.blueprints.manager import manager_bp
 from app.extensions import db
 from app.models import (
     Staff, Business, StaffBusinessAssignment, BusinessManager,
-    DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog
+    DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog,
+    StaffActivityReport, RecoveryTask, FieldVisit
 )
 from app.services.extraction_service import run_extraction
 
@@ -281,9 +282,11 @@ def businesses():
     search = request.args.get("search", "").strip()
     band = request.args.get("band", "")
     ntt_only = request.args.get("ntt_only", "")
+    target_met_only = request.args.get("target_met_only", "") 
+    target_not_met_only = request.args.get("target_not_met_only", "") # <--- New filter
 
-    # Start from the latest weekly report as the source of businesses
-    # if latest_date is not available, fallback to 2 days ago
+    download = request.args.get("download", "")
+
     if not WeeklyReport.query.filter_by(manager_id=current_user.id, report_date=latest_date).first():
         latest_date = date_2_days_ago
 
@@ -300,28 +303,43 @@ def businesses():
         query = query.filter(WeeklyReport.payment_value >= low)
         if high != float("inf"):
             query = query.filter(WeeklyReport.payment_value < high)
+            
+    # Apply Target filters (mutually exclusive logic)
+    if target_met_only:
+        query = query.filter(db.func.lower(WeeklyReport.target_met) == "true")
+    elif target_not_met_only:
+        query = query.filter(db.func.lower(WeeklyReport.target_met) != "true")
 
     weekly_rows = query.order_by(WeeklyReport.payment_value.desc()).all()
 
-    # If NTT filter is active, restrict to businesses in NTT report
     if ntt_only:
         ntt_names = {
             r.business_name for r in
-            NTTReport.query.filter_by(
-                manager_id=current_user.id, report_date=latest_date
-            ).all()
+            NTTReport.query.filter_by(manager_id=current_user.id, report_date=latest_date).all()
         }
         weekly_rows = [r for r in weekly_rows if r.business_name in ntt_names]
+        
+    # --- DOWNLOAD LOGIC ---
+    if download == "csv":
+        def generate_csv():
+            yield "Business Name,Value (NGN),Volume,Target Met,Days Inactive\n"
+            for r in weekly_rows:
+                name = f'"{r.business_name}"' 
+                val = r.payment_value or 0
+                vol = r.payment_vol or 0
+                t_met = r.target_met or 'False'
+                days = r.days_last_transact or ''
+                yield f"{name},{val},{vol},{t_met},{days}\n"
+        
+        return Response(
+            generate_csv(), 
+            mimetype="text/csv", 
+            headers={"Content-Disposition": f"attachment;filename=vantage_businesses_{latest_date}.csv"}
+        )
 
-    # Build a map of business_name → assignment info
-    all_businesses = Business.query.filter_by(
-        manager_id=current_user.id, is_active=True
-    ).all()
+    all_businesses = Business.query.filter_by(manager_id=current_user.id, is_active=True).all()
     biz_map = {b.name: b for b in all_businesses}
-
-    all_staffs = Staff.query.filter_by(
-        manager_id=current_user.id, is_active=True
-    ).all()
+    all_staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
 
     return render_template(
         "manager/business_setup.html",
@@ -331,9 +349,21 @@ def businesses():
         search=search,
         band=band,
         ntt_only=ntt_only,
+        target_met_only=target_met_only, 
+        target_not_met_only=target_not_met_only, # <--- Pass to template
         payment_bands=PAYMENT_BANDS,
         latest_date=latest_date,
     )
+
+def _preserve_filters():
+    """Carry search/filter params back to the businesses page after POST."""
+    params = []
+    # Added target_not_met_only to the preserved list
+    for key in ("search", "band", "ntt_only", "target_met_only", "target_not_met_only"): 
+        val = request.form.get(key, "")
+        if val:
+            params.append(f"{key}={val}")
+    return ("?" + "&".join(params)) if params else ""
 
 
 @manager_bp.route("/businesses/assign", methods=["POST"])
@@ -432,3 +462,48 @@ def upload():
             flash(f"Extraction failed: {str(e)}", "error")
 
     return render_template("manager/upload.html")
+
+@manager_bp.route("/leaderboard", methods=["GET", "POST"])
+@login_required
+@manager_required
+def leaderboard():
+    staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
+    
+    leaderboard_data = []
+    for staff in staffs:
+        # Calculate resolved recovery tasks
+        resolved_tasks = RecoveryTask.query.filter_by(
+            staff_id=staff.id, status="RESOLVED"
+        ).count()
+
+        # Aggregate activity metrics from staff activity reports
+        activities = StaffActivityReport.query.filter_by(staff_id=staff.id).all()
+        total_visits = sum(a.visits for a in activities)
+        total_calls = sum(a.calls for a in activities)
+        total_recoveries = sum(a.recoveries for a in activities)
+        total_leads = sum(a.new_leads for a in activities)
+
+        # Simple composite score formula (can be tweaked based on your business weighting)
+        score = (resolved_tasks * 10) + (total_recoveries * 5) + (total_visits * 2) + total_calls + (total_leads * 3)
+
+        leaderboard_data.append({
+            "staff": staff,
+            "resolved_tasks": resolved_tasks,
+            "visits": total_visits,
+            "calls": total_calls,
+            "recoveries": total_recoveries,
+            "leads": total_leads,
+            "score": score
+        })
+
+    # Sort descending by calculated score
+    leaderboard_data.sort(key=lambda x: x["score"], reverse=True)
+
+    return render_template("manager/leaderboard.html", leaderboard=leaderboard_data)
+
+@manager_bp.route("/visits")
+@login_required
+@manager_required
+def field_visits():
+    visits = FieldVisit.query.filter_by(manager_id=current_user.id).order_by(FieldVisit.visit_date.desc()).all()
+    return render_template("manager/field_visits.html", visits=visits)

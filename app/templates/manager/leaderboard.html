@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}KPI Leaderboard — Vantage{% endblock %}
+
+{% block content %}
+<div class="mb-5">
+    <h1 class="text-xl font-bold text-brand-900">Staff KPI Leaderboard</h1>
+    <p class="text-gray-500 text-sm mt-0.5">Rankings based on field activity, recoveries, and task resolution</p>
+</div>
+
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div class="table-scroll">
+        <table class="w-full text-left text-xs">
+            <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                <tr>
+                    <th class="px-4 py-3">Rank</th>
+                    <th class="px-4 py-3">Staff Member</th>
+                    <th class="px-4 py-3 text-center">Resolved Tasks</th>
+                    <th class="px-4 py-3 text-center">Visits</th>
+                    <th class="px-4 py-3 text-center">Calls</th>
+                    <th class="px-4 py-3 text-center">Leads</th>
+                    <th class="px-4 py-3 text-center">Recoveries</th>
+                    <th class="px-4 py-3 text-right">Total Score</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for entry in leaderboard %}
+                <tr class="hover:bg-gray-50/50">
+                    <td class="px-4 py-3 font-bold text-gray-700">
+                        {% if loop.index == 1 %}🥇 1st
+                        {% elif loop.index == 2 %}🥈 2nd
+                        {% elif loop.index == 3 %}🥉 3rd
+                        {% else %}{{ loop.index }}th{% endif %}
+                    </td>
+                    <td class="px-4 py-3 font-semibold text-gray-800">
+                        {{ entry.staff.full_name or entry.staff.username }}
+                        <span class="block text-xs font-normal text-gray-400">@{{ entry.staff.username }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-center font-medium text-gray-700">{{ entry.resolved_tasks }}</td>
+                    <td class="px-4 py-3 text-center font-medium text-gray-700">{{ entry.visits }}</td>
+                    <td class="px-4 py-3 text-center font-medium text-gray-700">{{ entry.calls }}</td>
+                    <td class="px-4 py-3 text-center font-medium text-gray-700">{{ entry.leads }}</td>
+                    <td class="px-4 py-3 text-center font-medium text-green-600">{{ entry.recoveries }}</td>
+                    <td class="px-4 py-3 text-right font-bold text-brand-900 text-sm">{{ entry.score }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="px-4 py-8 text-center text-gray-400">No performance data available yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

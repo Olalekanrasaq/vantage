@@ -68,8 +68,13 @@
                     <a href="{{ url_for('manager.analysis') }}" class="hover:text-blue-200 transition">Analysis</a>
                     <a href="{{ url_for('manager.upload') }}" class="hover:text-blue-200 transition">Upload</a>
                     <a href="{{ url_for('recovery.center') }}" class="hover:text-blue-200 transition">Recovery</a>
+                    <a href="{{ url_for('manager.field_visits') }}" class="hover:text-blue-200 transition">Field Visits</a>
+                    <a href="{{ url_for('manager.leaderboard') }}" class="hover:text-blue-200 transition">Leaderboard</a>
                 {% elif current_user.role == 'staff' %}
                     <a href="{{ url_for('staff.dashboard') }}" class="hover:text-blue-200 transition">Dashboard</a>
+                    <a href="{{ url_for('staff.businesses') }}" class="hover:text-blue-200 transition">Assigned Businesses</a>
+                    <a href="{{ url_for('staff.visits') }}" class="hover:text-blue-200 transition">Field Visits</a>
+                    <a href="{{ url_for('staff.submit_report') }}" class="hover:text-blue-200 transition">Submit Report</a>
                 {% elif current_user.role == 'super_admin' %}
                     <a href="{{ url_for('admin.dashboard') }}" class="hover:text-blue-200 transition">Admin</a>
                 {% endif %}
@@ -153,10 +158,37 @@
                         </svg>
                         Recovery
                     </a>
+                    <a href="{{ url_for('manager.field_visits') }}"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-brand-700 transition text-sm">
+                        <svg class="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                        </svg>
+                        Field Visits
+                    </a>
+                    <a href="{{ url_for('manager.leaderboard') }}"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-brand-700 transition text-sm">
+                        <svg class="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        Leaderboard
+                    </a>
                 {% elif current_user.role == 'staff' %}
                     <a href="{{ url_for('staff.dashboard') }}"
                        class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-brand-700 transition text-sm">
                         Dashboard
+                    </a>
+                    <a href="{{ url_for('staff.businesses') }}"
+                       class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-brand-700 transition text-sm">
+                        Assigned Businesses
+                    </a>
+                    <a href="{{ url_for('staff.visits') }}"
+                       class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-brand-700 transition text-sm">
+                        Field Visits
+                    </a>
+                    <a href="{{ url_for('staff.submit_report') }}"
+                       class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-brand-700 transition text-sm">
+                        Submit Report
                     </a>
                 {% elif current_user.role == 'super_admin' %}
                     <a href="{{ url_for('admin.dashboard') }}"

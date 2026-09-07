@@ -29,7 +29,9 @@ class Config:
 
     # ── Uploads ───────────────────────────────────────────────────────────────
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "app", "static", "uploads")
+    VISIT_UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "app", "static", "uploads", "visits")
     ALLOWED_EXTENSIONS = {"pdf"}
+    ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max upload
 
 

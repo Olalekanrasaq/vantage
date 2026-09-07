@@ -6,3 +6,4 @@ from .payment import Payment
 from .fetch_log import FetchLog
 from .activity import StaffActivityReport
 from .recovery import RecoveryTask
+from .visit import FieldVisit
