@@ -3,7 +3,6 @@ from flask_login import login_user, logout_user, login_required, current_user
 from app.blueprints.auth import auth_bp
 from app.extensions import db
 from app.models import BusinessManager, Staff, SuperAdmin
-from app.services.gmail_service import get_auth_url, exchange_code_for_credentials, get_google_user_info, credentials_to_json
 import json
 
 

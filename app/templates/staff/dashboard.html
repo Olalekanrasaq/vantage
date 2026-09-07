@@ -4,12 +4,17 @@
 
 {% block content %}
 
-<div class="mb-5">
-  <h1 class="text-xl font-bold text-brand-900">Dashboard</h1>
-  <p class="text-gray-500 text-sm mt-0.5">
-    {{ current_user.username }} &nbsp;·&nbsp;
-    <span class="text-gray-400">Report date: {{ report_date }}</span>
-  </p>
+<div class="mb-5 flex items-center justify-between">
+  <div>
+    <h1 class="text-xl font-bold text-brand-900">Dashboard</h1>
+    <p class="text-gray-500 text-sm mt-0.5">
+      {{ current_user.username }} &nbsp;·&nbsp;
+      <span class="text-gray-400">Report date: {{ report_date }}</span>
+    </p>
+  </div>
+  <a href="{{ url_for('staff.submit_report') }}" class="bg-brand-900 text-white text-xs px-4 py-2.5 rounded-xl font-semibold hover:bg-brand-700 transition shadow-sm">
+    Submit Daily Report
+  </a>
 </div>
 
 <!-- Assigned businesses pill strip -->
@@ -26,6 +31,44 @@
 <!-- Metrics cards -->
 {{ render(metrics) }}
 <!-- {% include "partials/dashboard_metrics.html" %} -->
+
+<!-- Assigned Recovery Tasks -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5">
+  <h2 class="text-sm font-semibold text-gray-700 mb-3">Assigned Recovery Tasks</h2>
+  
+  <div class="space-y-3">
+    {% for task in assigned_tasks %}
+    <div class="border border-gray-100 rounded-xl p-3 bg-gray-50/50 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <p class="text-sm font-semibold text-gray-800">{{ task.business.name }}</p>
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium
+            {% if task.priority == 'CRITICAL' %}bg-red-100 text-red-700
+            {% elif task.priority == 'HIGH' %}bg-orange-100 text-orange-700
+            {% else %}bg-yellow-100 text-yellow-700{% endif %}">
+            {{ task.priority }}
+          </span>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">Terminal: <span class="font-medium text-gray-700">{{ task.terminal_serial or 'N/A' }}</span></p>
+        {% if task.notes %}<p class="text-xs text-gray-400 mt-0.5">Note from Manager: {{ task.notes }}</p>{% endif %}
+      </div>
+
+      <form method="POST" action="{{ url_for('staff.update_recovery_task', task_id=task.id) }}" class="flex items-center gap-2">
+        <select name="status" class="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white">
+          <option value="PENDING" {% if task.status == 'PENDING' %}selected{% endif %}>Pending</option>
+          <option value="IN_PROGRESS" {% if task.status == 'IN_PROGRESS' %}selected{% endif %}>In Progress</option>
+          <option value="RESOLVED" {% if task.status == 'RESOLVED' %}selected{% endif %}>Resolved</option>
+        </select>
+        <button type="submit" class="bg-brand-900 text-white rounded-lg px-3 py-1 text-xs font-medium hover:bg-brand-700 transition">
+          Update
+        </button>
+      </form>
+    </div>
+    {% else %}
+    <p class="text-xs text-gray-400 text-center py-4">No recovery tasks assigned to you right now.</p>
+    {% endfor %}
+  </div>
+</div>
 
 <!-- Tables -->
 <h2 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Today's Report</h2>

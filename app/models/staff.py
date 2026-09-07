@@ -27,6 +27,10 @@ class Staff(UserMixin, db.Model):
         back_populates="staff",
         cascade="all, delete-orphan"
     )
+    recovery_tasks = db.relationship("RecoveryTask", back_populates="staff", 
+                                    cascade="all, delete-orphan")
+    activity_reports = db.relationship("StaffActivityReport", back_populates="staff", 
+                                    cascade="all, delete-orphan")
 
     # Username must be unique per manager (two managers can have a staff named "john")
     __table_args__ = (

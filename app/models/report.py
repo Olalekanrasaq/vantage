@@ -71,6 +71,7 @@ class NTTReport(db.Model):
 
     # Extracted fields
     business_name = db.Column(db.String(255), nullable=False)
+    terminal_serial = db.Column(db.String(100), nullable=True)
     days_last_transact = db.Column(db.String(20), nullable=True)
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))

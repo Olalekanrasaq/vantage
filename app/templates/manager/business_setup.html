@@ -99,7 +99,7 @@
     <!-- Stats row -->
     <div class="flex gap-3 text-xs text-gray-500 mb-3">
       <span>Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></span>
-      <span>Days: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></span>
+      <span>Days last transact: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></span>
       <span>Target:
         <strong class="{% if row.target_met|lower == 'true' %}text-green-600{% else %}text-red-500{% endif %}">
           {{ 'Met' if row.target_met|lower == 'true' else 'Not Met' }}

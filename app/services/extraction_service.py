@@ -240,6 +240,7 @@ def extract_ntt_report(pdf_bytes: bytes) -> pd.DataFrame:
         try:
             bo = {
                 "Business Name": " ".join(names_part),
+                "terminal_serial": data_list[i],
                 "days_last_transact": data_list[i + 2],
             }
             bos.append(bo)
@@ -410,7 +411,12 @@ def _save_ntt(manager, df: pd.DataFrame, report_date: date, source: str) -> int:
             business_name=name,
             report_date=report_date,
         ).first()
+        
+        # Grab terminal serial from dataframe (adjust key if your extract_ntt_report dataframe uses lowercase or different casing)
+        t_serial = str(row.get("terminal_serial", row.get("Terminal Serial", ""))).strip()
+
         if existing:
+            existing.terminal_serial = t_serial
             existing.days_last_transact = str(row.get("days_last_transact", ""))
             existing.source = source
         else:
@@ -420,6 +426,7 @@ def _save_ntt(manager, df: pd.DataFrame, report_date: date, source: str) -> int:
                 report_date=report_date,
                 source=source,
                 business_name=name,
+                terminal_serial=t_serial,
                 days_last_transact=str(row.get("days_last_transact", "")),
             )
             db.session.add(record)

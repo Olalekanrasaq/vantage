@@ -1,11 +1,11 @@
 from datetime import date, timedelta
-from flask import render_template, abort
+from flask import render_template, abort, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from functools import wraps
 
 from app.blueprints.staff import staff_bp
 from app.extensions import db
-from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport
+from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask
 from app.blueprints.manager.routes import _get_dashboard_metrics, _get_dashboard_tables
 
 
@@ -34,8 +34,15 @@ def dashboard():
 
     metrics = _get_dashboard_metrics(manager_id, todays_report_date, yesterdays_report_date, date_2_days_ago)
 
+    # Fetch recovery tasks assigned to this staff member
+    assigned_tasks = RecoveryTask.query.filter_by(
+        staff_id=current_user.id
+    ).order_by(RecoveryTask.created_at.desc()).all()
+
     # Recompute metrics filtered to staff's businesses only
     def _filter_metrics():
+        nonlocal todays_report_date, yesterdays_report_date
+
         def count_met(model, r_date):
             rows = model.query.filter_by(manager_id=manager_id, report_date=r_date).filter(
                 model.business_name.in_(assigned_names)
@@ -93,7 +100,7 @@ def dashboard():
     staff_metrics = _filter_metrics()
 
     weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
-        manager_id, todays_report_date, business_filter=assigned_names
+        manager_id, todays_report_date, yesterdays_report_date, business_filter=assigned_names
     )
 
     return render_template(
@@ -104,4 +111,59 @@ def dashboard():
         retention_list=retention_list,
         report_date=todays_report_date,
         assigned_businesses=current_user.assigned_businesses,
+        assigned_tasks=assigned_tasks,
     )
+
+@staff_bp.route("/report/submit", methods=["GET", "POST"])
+@login_required
+@staff_required
+def submit_report():
+    today = date.today()
+    existing = StaffActivityReport.query.filter_by(staff_id=current_user.id, report_date=today).first()
+
+    if request.method == "POST":
+        if existing:
+            flash("You have already submitted a report for today.", "warning")
+            return redirect(url_for("staff.dashboard"))
+
+        new_leads = request.form.get("new_leads", 0, type=int)
+        visits = request.form.get("visits", 0, type=int)
+        calls = request.form.get("calls", 0, type=int)
+        recoveries = request.form.get("recoveries", 0, type=int)
+        challenges = request.form.get("challenges", "").strip()
+        tomorrow_plan = request.form.get("tomorrow_plan", "").strip()
+
+        report = StaffActivityReport(
+            staff_id=current_user.id,
+            report_date=today,
+            new_leads=new_leads,
+            visits=visits,
+            calls=calls,
+            recoveries=recoveries,
+            challenges=challenges,
+            tomorrow_plan=tomorrow_plan
+        )
+        db.session.add(report)
+        db.session.commit()
+        
+        flash("Daily report submitted successfully!", "success")
+        return redirect(url_for("staff.dashboard"))
+
+    return render_template("staff/submit_report.html", today=today, existing=existing)
+
+@staff_bp.route("/recovery-task/<int:task_id>/update", methods=["POST"])
+@login_required
+@staff_required
+def update_recovery_task(task_id):
+    task = RecoveryTask.query.filter_by(id=task_id, staff_id=current_user.id).first_or_404()
+    new_status = request.form.get("status", "PENDING")
+    
+    if new_status in ["PENDING", "IN_PROGRESS", "RESOLVED"]:
+        task.status = new_status
+        if new_status == "RESOLVED":
+            from datetime import datetime, timezone
+            task.resolved_at = datetime.now(timezone.utc)
+        db.session.commit()
+        flash("Recovery task status updated.", "success")
+
+    return redirect(url_for("staff.dashboard"))

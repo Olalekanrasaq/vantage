@@ -60,13 +60,15 @@ class BusinessManager(UserMixin, db.Model):
 
     # Relationships
     staffs = db.relationship("Staff", back_populates="manager",
-                             cascade="all, delete-orphan")
+                                cascade="all, delete-orphan")
     businesses = db.relationship("Business", back_populates="manager",
-                                 cascade="all, delete-orphan")
+                                cascade="all, delete-orphan")
     payments = db.relationship("Payment", back_populates="manager",
-                               cascade="all, delete-orphan")
+                                cascade="all, delete-orphan")
     fetch_logs = db.relationship("FetchLog", back_populates="manager",
-                                 cascade="all, delete-orphan")
+                                cascade="all, delete-orphan")
+    recovery_tasks = db.relationship("RecoveryTask", back_populates="manager", 
+                                cascade="all, delete-orphan")
 
     def get_id(self):
         return f"bm-{self.id}"

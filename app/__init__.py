@@ -38,7 +38,9 @@ def create_app(config_name=None):
     from app.blueprints.staff import staff_bp
     from app.blueprints.admin import admin_bp
     from app.blueprints.payment import payment_bp
+    from app.blueprints.recovery import recovery_bp
 
+    app.register_blueprint(recovery_bp, url_prefix="/recovery")
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(manager_bp, url_prefix="/manager")
     app.register_blueprint(staff_bp, url_prefix="/staff")
