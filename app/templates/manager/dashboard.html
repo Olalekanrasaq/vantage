@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "partials/dashboard_metrics.html" import render %}
+{% block title %}Dashboard — Vantage{% endblock %}
+
+{% block content %}
+
+<div class="mb-5">
+  <h1 class="text-xl font-bold text-brand-900">Dashboard</h1>
+  <p class="text-gray-500 text-sm mt-0.5">
+    {{ current_user.full_name or current_user.email }} &nbsp;·&nbsp;
+    <span class="text-gray-400">Report date: {{ report_date }}</span>
+  </p>
+</div>
+
+<!-- Metrics cards -->
+{{ render(metrics) }}
+<!-- {% include "partials/dashboard_metrics.html" %} -->
+
+<!-- Staff summary strip -->
+{% if staffs %}
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-semibold text-gray-700">Staff</h2>
+    <a href="{{ url_for('manager.staffs') }}" class="text-xs text-brand-600 font-medium">Manage →</a>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    {% for staff in staffs %}
+    <div class="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+      <div class="w-7 h-7 bg-brand-100 rounded-full flex items-center justify-center">
+        <span class="text-xs font-bold text-brand-700">{{ staff.username[0].upper() }}</span>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-gray-700">{{ staff.username }}</p>
+        <p class="text-xs text-gray-400">{{ staff.assigned_businesses | length }} biz</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Today's report tables -->
+<h2 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Today's Report</h2>
+{% include "partials/dashboard_tables.html" %}
+
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "partials/dashboard_metrics.html" import render %}
+{% block title %}Dashboard — Vantage{% endblock %}
+
+{% block content %}
+
+<div class="mb-5">
+  <h1 class="text-xl font-bold text-brand-900">Dashboard</h1>
+  <p class="text-gray-500 text-sm mt-0.5">
+    {{ current_user.username }} &nbsp;·&nbsp;
+    <span class="text-gray-400">Report date: {{ report_date }}</span>
+  </p>
+</div>
+
+<!-- Assigned businesses pill strip -->
+{% if assigned_businesses %}
+<div class="flex flex-wrap gap-2 mb-4">
+  {% for b in assigned_businesses %}
+  <span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-medium">
+    {{ b.name }}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Metrics cards -->
+{{ render(metrics) }}
+<!-- {% include "partials/dashboard_metrics.html" %} -->
+
+<!-- Tables -->
+<h2 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Today's Report</h2>
+{% include "partials/dashboard_tables.html" %}
+
+{% endblock %}

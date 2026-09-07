@@ -1,0 +1,66 @@
+{% macro render(metrics) %}
+
+{% macro delta_badge(val) %}
+  {% if val > 0 %}
+    <span class="text-xs font-semibold text-red-500">▲ {{ val }}</span>
+  {% elif val < 0 %}
+    <span class="text-xs font-semibold text-green-500">▼ {{ val|abs }}</span>
+  {% else %}
+    <span class="text-xs text-gray-400">— 0</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro delta_badge_inv(val) %}
+  {% if val > 0 %}
+    <span class="text-xs font-semibold text-green-500">▲ {{ val }}</span>
+  {% elif val < 0 %}
+    <span class="text-xs font-semibold text-red-500">▼ {{ val|abs }}</span>
+  {% else %}
+    <span class="text-xs text-gray-400">— 0</span>
+  {% endif %}
+{% endmacro %}
+
+<div class="grid grid-cols-2 gap-3 mb-5">
+
+  <!-- Total Businesses -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Businesses</p>
+    <p class="text-2xl font-bold text-brand-900 mt-1">{{ metrics.total_businesses }}</p>
+    <div class="mt-1">{{ delta_badge_inv(metrics.delta_total) }}</div>
+  </div>
+
+  <!-- Daily Target Met -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Daily Target</p>
+    <p class="text-2xl font-bold text-brand-900 mt-1">{{ metrics.daily_met }}</p>
+    <p class="text-xs text-gray-500">{{ metrics.daily_met_pct }}% of total</p>
+    <div class="mt-1">{{ delta_badge_inv(metrics.delta_daily_met) }}</div>
+  </div>
+
+  <!-- Weekly Target Met -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Weekly Target</p>
+    <p class="text-2xl font-bold text-brand-900 mt-1">{{ metrics.weekly_met }}</p>
+    <p class="text-xs text-gray-500">{{ metrics.weekly_met_pct }}% of total</p>
+    <div class="mt-1">{{ delta_badge_inv(metrics.delta_weekly_met) }}</div>
+  </div>
+
+  <!-- Non-Transacting -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Non-Transacting</p>
+    <p class="text-2xl font-bold text-orange-500 mt-1">{{ metrics.ntt_count }}</p>
+    <p class="text-xs text-gray-500">{{ metrics.ntt_pct }}% of total</p>
+    <div class="mt-1">{{ delta_badge(metrics.delta_ntt) }}</div>
+  </div>
+
+  <!-- Declined Top BOs -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 col-span-2">
+    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Declined Top Businesses</p>
+    <div class="flex items-center gap-3 mt-1">
+      <p class="text-2xl font-bold text-red-500">{{ metrics.retention_count }}</p>
+      <div>{{ delta_badge(metrics.delta_retention) }}</div>
+    </div>
+  </div>
+
+</div>
+{% endmacro %}

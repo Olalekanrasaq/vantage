@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Log In — Vantage{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center min-h-[80vh] -mt-2">
+
+    <!-- Hero / Logo mark -->
+    <div class="w-full max-w-sm">
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-brand-900 rounded-2xl mb-4 shadow-lg">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+            </div>
+            <h1 class="text-3xl font-bold text-brand-900">Welcome Back</h1>
+            <p class="text-gray-500 text-sm mt-1">Log in to your Vantage account</p>
+        </div>
+
+        <!-- Log In Card -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            
+            <form method="POST" action="{{ url_for('auth.user_login') }}" class="space-y-4">
+                <!-- Email Input -->
+                <div>
+                    <label for="email" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Email Address</label>
+                    <input type="email" name="email" id="email" required
+                           class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-900 focus:border-transparent transition"
+                           placeholder="you@company.com">
+                </div>
+
+                <!-- Password Input -->
+                <div>
+                    <label for="password" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Password</label>
+                    <input type="password" name="password" id="password" required
+                           class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-900 focus:border-transparent transition"
+                           placeholder="••••••••">
+                </div>
+
+                <!-- Submit Button -->
+                <button type="submit"
+                        class="w-full flex items-center justify-center bg-brand-900 text-white rounded-xl px-4 py-3.5 text-sm font-medium hover:bg-brand-700 active:bg-brand-600 transition mt-2">
+                    Log In
+                </button>
+            </form>
+
+            <!-- Divider -->
+            <div class="relative py-4 mt-2">
+                <div class="absolute inset-0 flex items-center">
+                    <div class="w-full border-t border-gray-100"></div>
+                </div>
+                <div class="relative flex justify-center">
+                    <span class="bg-white px-3 text-xs text-gray-400">or</span>
+                </div>
+            </div>
+
+            <!-- Staff Login Link (Optional, kept from your original code) -->
+            <div>
+                <a href="{{ url_for('auth.staff_login') }}"
+                   class="flex items-center justify-center w-full border border-gray-200 text-gray-600 rounded-xl px-4 py-3 text-sm font-medium hover:bg-gray-50 active:bg-gray-100 transition">
+                    Staff Login
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer Link to Sign Up -->
+        <p class="text-center text-sm text-gray-500 mt-6">
+            Don't have an account? 
+            <a href="{{ url_for('auth.user_signup') }}" class="font-medium text-brand-900 hover:underline">Sign up</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Analysis — Vantage{% endblock %}
+
+{% block content %}
+
+<div class="mb-5">
+    <h1 class="text-xl font-bold text-brand-900">Report Analysis</h1>
+    <p class="text-gray-500 text-sm mt-0.5">Compare reports between two dates</p>
+</div>
+
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
+    <form method="POST" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">From</label>
+                <input type="date" name="date_1" required
+                       value="{{ date_1 or '' }}"
+                       class="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-gray-50
+                              focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">To</label>
+                <input type="date" name="date_2" required
+                       value="{{ date_2 or '' }}"
+                       class="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-gray-50
+                              focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+            </div>
+        </div>
+        <button type="submit"
+                class="w-full bg-brand-900 text-white rounded-xl py-3.5 text-sm font-semibold
+                       hover:bg-brand-700 active:bg-brand-600 transition">
+            Run Analysis
+        </button>
+    </form>
+</div>
+
+{% if results %}
+<div class="space-y-4">
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-gray-700 mb-3">
+            {{ results.date_1 }} — {{ results.reports_1 | length }} businesses
+        </h2>
+        {% if results.reports_1 %}
+            <div class="table-scroll">
+                <p class="text-sm text-gray-400 text-center py-2">
+                    Analysis output will appear here once extraction code is integrated.
+                </p>
+            </div>
+        {% else %}
+            <p class="text-sm text-gray-400 text-center py-4">No report found for this date.</p>
+        {% endif %}
+    </div>
+
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-gray-700 mb-3">
+            {{ results.date_2 }} — {{ results.reports_2 | length }} businesses
+        </h2>
+        {% if results.reports_2 %}
+            <div class="table-scroll">
+                <p class="text-sm text-gray-400 text-center py-2">
+                    Analysis output will appear here once extraction code is integrated.
+                </p>
+            </div>
+        {% else %}
+            <p class="text-sm text-gray-400 text-center py-4">No report found for this date.</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

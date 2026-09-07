@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+v_env/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+instance/
+app/static/uploads/*
+!app/static/uploads/.gitkeep
+migrations/versions/

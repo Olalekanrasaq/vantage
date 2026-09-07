@@ -1,0 +1,197 @@
+<!-- Weekly Not Met Table -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm mb-4">
+
+  <details class="group">
+    <summary class="px-4 py-3 border-b border-gray-50 flex items-center justify-between cursor-pointer list-none">
+      <h2 class="text-sm font-semibold text-gray-700">
+        Not Meeting Weekly Target
+        <span class="ml-1 text-xs font-normal text-gray-400">
+          ({{ weekly_not_met | length }})
+        </span>
+      </h2>
+
+      <svg class="w-5 h-5 text-gray-500 transition-transform duration-200 group-open:rotate-180"
+           xmlns="http://www.w3.org/2000/svg"
+           fill="none"
+           viewBox="0 0 24 24"
+           stroke="currentColor">
+        <path stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 9l-7 7-7-7"/>
+      </svg>
+    </summary>
+
+    {% if weekly_not_met %}
+    <div class="table-scroll">
+      <table class="w-full text-xs">
+        <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide">
+          <tr>
+            <th class="px-3 py-2 text-left">Business</th>
+            <th class="px-3 py-2 text-right">Vol</th>
+            <th class="px-3 py-2 text-right">Value (₦)</th>
+            <th class="px-3 py-2 text-center">Days Last Transact</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for r in weekly_not_met %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-3 py-2 font-medium text-gray-800 max-w-[120px] truncate">
+              {{ r.business_name }}
+            </td>
+            <td class="px-3 py-2 text-right text-gray-700">
+              {{ "{:,}".format(r.payment_vol or 0) }}
+            </td>
+            <td class="px-3 py-2 text-right text-gray-700">
+              {{ "{:,.0f}".format(r.payment_value or 0) }}
+            </td>
+            <td class="px-3 py-2 text-center">
+              <span class="px-1.5 py-0.5 rounded text-xs font-medium
+                {% if (r.days_last_transact or '0')|int > 3 %}
+                  bg-red-100 text-red-700
+                {% else %}
+                  bg-yellow-100 text-yellow-700
+                {% endif %}">
+                {{ r.days_last_transact or '—' }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-400 text-center py-6">
+      All businesses are meeting weekly target.
+    </p>
+    {% endif %}
+  </details>
+
+</div>
+
+<!-- NTT Table -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm mb-4">
+  <details class="group">
+    <summary class="px-4 py-3 border-b border-gray-50 flex items-center justify-between cursor-pointer list-none">
+      <h2 class="text-sm font-semibold text-gray-700">
+        Non-Transacting Terminals
+        <span class="ml-1 text-xs font-normal text-gray-400">
+          ({{ ntt_list | length }})
+        </span>
+      </h2>
+
+      <svg class="w-5 h-5 text-gray-500 transition-transform duration-200 group-open:rotate-180"
+           xmlns="http://www.w3.org/2000/svg"
+           fill="none"
+           viewBox="0 0 24 24"
+           stroke="currentColor">
+        <path stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 9l-7 7-7-7"/>
+      </svg>
+    </summary>
+
+    {% if ntt_list %}
+    <div class="table-scroll">
+      <table class="w-full text-xs">
+        <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide">
+          <tr>
+            <th class="px-3 py-2 text-left">Business</th>
+            <th class="px-3 py-2 text-center">Days Since Last Transaction</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for r in ntt_list %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-3 py-2 font-medium text-gray-800">
+              {{ r.business_name }}
+            </td>
+            <td class="px-3 py-2 text-center">
+              <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
+                {{ r.days_last_transact or '—' }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-400 text-center py-6">
+      No non-transacting terminals.
+    </p>
+    {% endif %}
+  </details>
+</div>
+
+<!-- Retention / Declined Table -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm mb-4">
+  <details class="group">
+    <summary class="px-4 py-3 border-b border-gray-50 flex items-center justify-between cursor-pointer list-none">
+      <h2 class="text-sm font-semibold text-gray-700">
+        Declined Top Businesses
+        <span class="ml-1 text-xs font-normal text-gray-400">
+          ({{ retention_list | length }})
+        </span>
+      </h2>
+
+      <svg class="w-5 h-5 text-gray-500 transition-transform duration-200 group-open:rotate-180"
+           xmlns="http://www.w3.org/2000/svg"
+           fill="none"
+           viewBox="0 0 24 24"
+           stroke="currentColor">
+        <path stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 9l-7 7-7-7"/>
+      </svg>
+    </summary>
+
+    {% if retention_list %}
+    <div class="table-scroll">
+      <table class="w-full text-xs">
+        <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide">
+          <tr>
+            <th class="px-3 py-2 text-left">Business</th>
+            <th class="px-3 py-2 text-right">Min Volume</th>
+            <th class="px-3 py-2 text-right">Vol Meet</th>
+            <th class="px-3 py-2 text-center">Days Declined</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for r in retention_list %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-3 py-2 font-medium text-gray-800 max-w-[120px] truncate">
+              {{ r.business_name }}
+            </td>
+            <td class="px-3 py-2 text-right text-gray-700">
+              {{ r.min_volume or '—' }}
+            </td>
+            <td class="px-3 py-2 text-right text-gray-700">
+              {{ r.vol_meet or '—' }}
+            </td>
+            <td class="px-3 py-2 text-center">
+              <span class="px-1.5 py-0.5 rounded text-xs font-semibold
+                {% if (r.days_decline or '0')|int > 7 %}
+                  bg-red-100 text-red-700
+                {% elif (r.days_decline or '0')|int > 3 %}
+                  bg-orange-100 text-orange-700
+                {% else %}
+                  bg-yellow-100 text-yellow-700
+                {% endif %}">
+                {{ r.days_decline or '—' }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-400 text-center py-6">
+      No declined top businesses.
+    </p>
+    {% endif %}
+  </details>
+</div>
