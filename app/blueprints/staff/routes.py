@@ -39,7 +39,8 @@ def dashboard():
 
     # Fetch recovery tasks assigned to this staff member
     assigned_tasks = RecoveryTask.query.filter_by(
-        staff_id=current_user.id
+        staff_id=current_user.id,
+        is_cleared=False
     ).order_by(RecoveryTask.created_at.desc()).all()
 
     # Recompute metrics filtered to staff's businesses only

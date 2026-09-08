@@ -1,5 +1,10 @@
+import os
+import json
+from google import genai
+from google.genai import types
+
 from datetime import date, timedelta
-from flask import render_template, redirect, url_for, request, flash, current_app, Response
+from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify
 from flask_login import login_required, current_user
 from flask import abort
 from functools import wraps
@@ -13,7 +18,9 @@ from app.models import (
     StaffActivityReport, RecoveryTask, FieldVisit
 )
 from app.services.extraction_service import run_extraction
+from dotenv import load_dotenv
 
+load_dotenv()
 
 def manager_required(f):
     @wraps(f)
@@ -507,3 +514,97 @@ def leaderboard():
 def field_visits():
     visits = FieldVisit.query.filter_by(manager_id=current_user.id).order_by(FieldVisit.visit_date.desc()).all()
     return render_template("manager/field_visits.html", visits=visits)
+
+@manager_bp.route("/api/ai-analyze", methods=["POST"])
+@login_required
+@manager_required
+def ai_analyze():
+    user_prompt = request.json.get("prompt")
+    if not user_prompt:
+        return jsonify({"error": "Prompt is required"}), 400
+
+    # Gather the Manager's Data Context (Last 30 Days for deep insights)
+    thirty_days_ago = date.today() - timedelta(days=30)
+    
+    # 1. Staff Context
+    staffs = Staff.query.filter_by(manager_id=current_user.id).all()
+    staff_data = [{"username": s.username} for s in staffs]
+
+    # 2. Daily & Weekly Reports Context
+    # Adjust these attribute names to match your exact database columns
+    daily_reports = DailyReport.query.filter(
+        DailyReport.manager_id == current_user.id,
+        DailyReport.report_date >= thirty_days_ago
+    ).all()
+    daily_data = [{"business": r.business_name, "date": str(r.report_date), "value": int(r.payment_value), "volume": r.payment_vol, "target": r.target_met} for r in daily_reports]
+
+    weekly_reports = WeeklyReport.query.filter(
+        WeeklyReport.manager_id == current_user.id,
+        WeeklyReport.report_date >= thirty_days_ago
+    ).all()
+    weekly_data = [{"business": r.business_name, "date": str(r.report_date), "value": int(r.payment_value), "volume": r.payment_vol, "target_met": r.target_met} for r in weekly_reports]
+
+    # 3. Field Visits Context
+    visits = FieldVisit.query.join(Business).filter(
+        Business.manager_id == current_user.id,
+        FieldVisit.visit_date >= thirty_days_ago
+    ).all()
+    visit_data = [{"business": v.business.name, "date": str(v.visit_date), "issues": v.issue, "action": v.action_taken, "status": v.result} for v in visits]
+
+    # 4. NTT & Retention Context (Assuming you have these models)
+    ntt_reports = NTTReport.query.filter(
+        NTTReport.manager_id == current_user.id, 
+        NTTReport.report_date >= thirty_days_ago
+    ).all()
+    ntt_data = [{"business": n.business_name, "days_inactive": n.days_last_transact, "date": str(n.report_date)} for n in ntt_reports]
+
+    retention_reports = RetentionReport.query.filter(
+        RetentionReport.manager_id == current_user.id, 
+        RetentionReport.report_date >= thirty_days_ago
+    ).all()
+    retention_data = [{"business": n.business_name, "days_decline": n.days_decline, "date": str(n.report_date), "expected_vol": n.min_volume, "actual_vol": n.vol_meet} for n in retention_reports]
+    # Combine EVERYTHING into one massive context dictionary
+    context_data = {
+        "staff_team": staff_data,
+        "daily_performance_30_days": daily_data,
+        "weekly_performance_30_days": weekly_data,
+        "field_visits_30_days": visit_data,
+        "inactive_terminals_ntt": ntt_data,
+        "retention_review": retention_data
+    }
+
+    system_instruction = """
+    You are an elite AI Data Analyst for a business manager. 
+    You are answering a question based ONLY on the provided JSON data context containing daily, weekly, NTT, retention and field visit data.
+    
+    You MUST return your response in valid JSON format exactly matching this structure:
+    {
+      "text_response": "Your detailed analysis, explanations, and insights in markdown format.",
+      "has_table": boolean (true if a table is requested or useful, false otherwise),
+      "table_headers": ["Column 1", "Column 2"] (empty if has_table is false),
+      "table_data": [
+         ["Row 1 Data", "Row 1 Data"],
+         ["Row 2 Data", "Row 2 Data"]
+      ] (empty if has_table is false)
+    }
+    """
+
+    full_prompt = f"Context Data:\n{json.dumps(context_data)}\n\nManager's Question:\n{user_prompt}"
+
+    try:
+        api_key = os.environ.get('GEMINI_API_KEY')
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json"
+                )
+        )
+        
+        return jsonify(json.loads(response.text))
+
+    except Exception as e:
+        print(f"Gemini API Error: {e}")
+        return jsonify({"error": "Failed to generate AI response. Please try again."}), 500

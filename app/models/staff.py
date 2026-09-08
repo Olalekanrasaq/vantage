@@ -14,6 +14,7 @@ class Staff(UserMixin, db.Model):
     username = db.Column(db.String(100), nullable=False)
     full_name = db.Column(db.String(255), nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    phone = db.Column(db.String(20), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))

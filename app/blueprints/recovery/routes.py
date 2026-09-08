@@ -29,7 +29,10 @@ def center():
     ntt_rows = NTTReport.query.filter_by(manager_id=current_user.id, report_date=report_date).all()
     
     # Fetch existing active/pending recovery tasks
-    tasks = RecoveryTask.query.filter_by(manager_id=current_user.id).all()
+    tasks = RecoveryTask.query.filter_by(
+            manager_id=current_user.id, 
+            is_cleared=False
+            ).order_by(RecoveryTask.created_at.desc()).all()
     tasked_business_names = {t.business.name for t in tasks if t.status != "RESOLVED"}
 
     staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
@@ -74,17 +77,16 @@ def create_task():
 
     business = Business.query.filter_by(manager_id=current_user.id, name=business_name).first()
     if not business:
-        business = Business(manager_id=current_user.id, name=business_name)
-        db.session.add(business)
-        db.session.flush()
+        flash("Business not found.", "error")
+        return redirect(url_for("recovery.center"))
 
     task = RecoveryTask(
         manager_id=current_user.id,
         business_id=business.id,
         staff_id=staff_id if staff_id else None,
-        terminal_serial=terminal_serial,  # <--- Saved to task
+        terminal_serial=terminal_serial if terminal_serial else None,
+        days_inactive=days_inactive,
         priority=priority,
-        notes=notes,
         status="PENDING"
     )
     db.session.add(task)
@@ -109,4 +111,16 @@ def update_task_status(task_id):
         db.session.commit()
         flash("Task status updated.", "success")
 
+    return redirect(url_for("recovery.center"))
+
+@recovery_bp.route("/task/<int:task_id>/clear", methods=["POST"])
+@login_required
+@manager_required
+def clear_task(task_id):
+    task = RecoveryTask.query.filter_by(id=task_id, manager_id=current_user.id).first_or_404()
+    
+    task.is_cleared = True
+    db.session.commit()
+    
+    flash("Recovery task cleared from active queue.", "success")
     return redirect(url_for("recovery.center"))

@@ -1,71 +1,144 @@
 {% extends "base.html" %}
-{% block title %}Analysis — Vantage{% endblock %}
+{% block title %}AI Data Analysis — Vantage{% endblock %}
 
 {% block content %}
-
 <div class="mb-5">
-    <h1 class="text-xl font-bold text-brand-900">Report Analysis</h1>
-    <p class="text-gray-500 text-sm mt-0.5">Compare reports between two dates</p>
+    <h1 class="text-xl font-bold text-brand-900">AI Data Analyst</h1>
+    <p class="text-gray-500 text-sm mt-0.5">Ask questions about your daily, weekly, retention, and field visit data.</p>
 </div>
 
-<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
-    <form method="POST" class="space-y-4">
-        <div class="grid grid-cols-2 gap-3">
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1.5">From</label>
-                <input type="date" name="date_1" required
-                       value="{{ date_1 or '' }}"
-                       class="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-gray-50
-                              focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+<!-- AI Analysis Interface -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+    <div class="flex items-center gap-2 mb-4">
+        <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        <h2 class="text-lg font-bold text-gray-800">Ask Your Assistant</h2>
+    </div>
+    
+    <div class="mb-4">
+        <textarea id="ai-prompt" rows="3" 
+                  class="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition shadow-inner"
+                  placeholder="Ask anything... e.g., 'Why is my TA declining between yesterday and today?' or 'Show me a table of businesses inactive for 10 days.'"></textarea>
+    </div>
+    
+    <button id="ask-ai-btn" class="bg-brand-900 text-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-brand-700 transition flex items-center gap-2 shadow-sm">
+        <span>Analyze Data</span>
+        <svg id="ai-spinner" class="w-4 h-4 animate-spin hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+    </button>
+
+    <!-- AI Response Container -->
+    <div id="ai-response-container" class="mt-8 hidden border-t border-gray-100 pt-6">
+        
+        <!-- Markdown Text Response (Uses Tailwind Typography 'prose') -->
+        <div id="ai-text-response" class="prose prose-brand max-w-none text-gray-700 mb-8 text-sm md:text-base"></div>
+        
+        <!-- Dynamic Data Table -->
+        <div id="ai-table-container" class="hidden">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                    Generated Data Table
+                </h3>
+                <button id="download-csv-btn" class="bg-green-600 text-white rounded-md px-3 py-1.5 text-xs font-medium hover:bg-green-700 transition flex items-center gap-1 shadow-sm">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    Export CSV
+                </button>
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1.5">To</label>
-                <input type="date" name="date_2" required
-                       value="{{ date_2 or '' }}"
-                       class="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-gray-50
-                              focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+            
+            <div class="overflow-x-auto border border-gray-200 rounded-lg shadow-sm">
+                <table class="w-full text-left text-sm whitespace-nowrap">
+                    <thead id="ai-table-head" class="bg-gray-50 text-gray-600 uppercase text-[10px] font-bold tracking-wider"></thead>
+                    <tbody id="ai-table-body" class="divide-y divide-gray-100 bg-white"></tbody>
+                </table>
             </div>
         </div>
-        <button type="submit"
-                class="w-full bg-brand-900 text-white rounded-xl py-3.5 text-sm font-semibold
-                       hover:bg-brand-700 active:bg-brand-600 transition">
-            Run Analysis
-        </button>
-    </form>
-</div>
-
-{% if results %}
-<div class="space-y-4">
-    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h2 class="text-sm font-semibold text-gray-700 mb-3">
-            {{ results.date_1 }} — {{ results.reports_1 | length }} businesses
-        </h2>
-        {% if results.reports_1 %}
-            <div class="table-scroll">
-                <p class="text-sm text-gray-400 text-center py-2">
-                    Analysis output will appear here once extraction code is integrated.
-                </p>
-            </div>
-        {% else %}
-            <p class="text-sm text-gray-400 text-center py-4">No report found for this date.</p>
-        {% endif %}
-    </div>
-
-    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h2 class="text-sm font-semibold text-gray-700 mb-3">
-            {{ results.date_2 }} — {{ results.reports_2 | length }} businesses
-        </h2>
-        {% if results.reports_2 %}
-            <div class="table-scroll">
-                <p class="text-sm text-gray-400 text-center py-2">
-                    Analysis output will appear here once extraction code is integrated.
-                </p>
-            </div>
-        {% else %}
-            <p class="text-sm text-gray-400 text-center py-4">No report found for this date.</p>
-        {% endif %}
     </div>
 </div>
-{% endif %}
 
+<!-- Include marked.js for Markdown parsing -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<script>
+document.getElementById('ask-ai-btn').addEventListener('click', async () => {
+    const prompt = document.getElementById('ai-prompt').value.trim();
+    if (!prompt) return;
+
+    const btn = document.getElementById('ask-ai-btn');
+    const spinner = document.getElementById('ai-spinner');
+    const container = document.getElementById('ai-response-container');
+    const textEl = document.getElementById('ai-text-response');
+    const tableContainer = document.getElementById('ai-table-container');
+    
+    // UI Loading State
+    btn.disabled = true;
+    spinner.classList.remove('hidden');
+    container.classList.remove('hidden');
+    textEl.innerHTML = '<div class="flex items-center gap-2 text-gray-500 animate-pulse"><div class="w-2 h-2 bg-brand-500 rounded-full"></div> Analyzing your full database...</div>';
+    tableContainer.classList.add('hidden');
+
+    try {
+        const response = await fetch("{{ url_for('manager.ai_analyze') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            textEl.innerHTML = `<span class="text-red-500 font-semibold flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> ${data.error}</span>`;
+            return;
+        }
+
+        // Render Text Response using marked.js
+        textEl.innerHTML = marked.parse(data.text_response);
+
+        // Render Table if requested
+        if (data.has_table && data.table_data && data.table_data.length > 0) {
+            tableContainer.classList.remove('hidden');
+            
+            // Render Headers
+            let headHTML = '<tr>';
+            data.table_headers.forEach(h => { headHTML += `<th class="px-4 py-3">${h}</th>`; });
+            headHTML += '</tr>';
+            document.getElementById('ai-table-head').innerHTML = headHTML;
+            
+            // Render Body
+            let bodyHTML = '';
+            data.table_data.forEach(row => {
+                bodyHTML += '<tr class="hover:bg-gray-50 transition">';
+                row.forEach(cell => { bodyHTML += `<td class="px-4 py-3 text-gray-700">${cell}</td>`; });
+                bodyHTML += '</tr>';
+            });
+            document.getElementById('ai-table-body').innerHTML = bodyHTML;
+
+            // Attach CSV Download Logic
+            document.getElementById('download-csv-btn').onclick = () => downloadCSV(data.table_headers, data.table_data);
+        }
+
+    } catch (error) {
+        textEl.innerHTML = `<span class="text-red-500 font-semibold flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> A network error occurred while reaching the AI.</span>`;
+    } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+    }
+});
+
+function downloadCSV(headers, rows) {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += headers.join(",") + "\n";
+    rows.forEach(row => {
+        // Wrap cells in quotes to handle commas inside text seamlessly
+        let formattedRow = row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",");
+        csvContent += formattedRow + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Vantage_AI_Report_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
 {% endblock %}
