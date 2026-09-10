@@ -34,6 +34,7 @@ def dashboard():
 
     manager_id = current_user.manager_id
     assigned_names = [b.name for b in current_user.assigned_businesses]
+    assigned_ids = [b.id for b in current_user.assigned_businesses]
 
     metrics = _get_dashboard_metrics(manager_id, todays_report_date, yesterdays_report_date, date_2_days_ago)
 
@@ -47,12 +48,12 @@ def dashboard():
     def _filter_metrics():
         nonlocal todays_report_date, yesterdays_report_date
 
-        def count_met(model, r_date):
+        def count_met(model, r_date, target):
             rows = model.query.filter_by(manager_id=manager_id, report_date=r_date).filter(
                 model.business_name.in_(assigned_names)
             ).all()
             total = len(set(r.business_name for r in rows))
-            met = sum(1 for r in rows if str(r.target_met).strip().lower() == "true")
+            met = sum(1 for r in rows if int(r.payment_value) >= target)
             return total, met
 
         def ntt_count(r_date):
@@ -65,24 +66,32 @@ def dashboard():
                 manager_id=manager_id, report_date=r_date
             ).filter(RetentionReport.business_name.in_(assigned_names)).count()
 
+        def pend_count():
+            return RecoveryTask.query.filter_by(
+                manager_id=manager_id, staff_id=current_user.id, status='PENDING'
+            ).count()
+
         def pct(part, total):
             return round(part / total * 100, 1) if total else 0
 
         def delta(curr, prev):
             return curr - prev
 
+        daily_target = 14286
+        weekly_target = 100000
         # if todays_report_date is not available, fallback to yesterdays_report_date
         if not DailyReport.query.filter_by(manager_id=manager_id, report_date=todays_report_date).first():
             todays_report_date = yesterdays_report_date
             yesterdays_report_date = date_2_days_ago
-        total, daily_met = count_met(DailyReport, todays_report_date)
-        prev_total, prev_daily_met = count_met(DailyReport, yesterdays_report_date)
-        wk_total, wk_met = count_met(WeeklyReport, todays_report_date)
-        prev_wk_total, prev_wk_met = count_met(WeeklyReport, yesterdays_report_date)
+        total, daily_met = count_met(DailyReport, todays_report_date, daily_target)
+        prev_total, prev_daily_met = count_met(DailyReport, yesterdays_report_date, daily_target)
+        wk_total, wk_met = count_met(WeeklyReport, todays_report_date, weekly_target)
+        prev_wk_total, prev_wk_met = count_met(WeeklyReport, yesterdays_report_date, weekly_target)
         ntt = ntt_count(todays_report_date)
         prev_ntt = ntt_count(yesterdays_report_date)
         ret = ret_count(todays_report_date)
         prev_ret = ret_count(yesterdays_report_date)
+        pend_tasks = pend_count()
 
         return {
             "total_businesses": total,
@@ -94,6 +103,7 @@ def dashboard():
             "ntt_count": ntt,
             "ntt_pct": pct(ntt, total),
             "retention_count": ret,
+            "pending_tasks": pend_tasks or 0,
             "delta_total": delta(total, prev_total),
             "delta_daily_met": delta(daily_met, prev_daily_met),
             "delta_weekly_met": delta(wk_met, prev_wk_met),
@@ -126,10 +136,7 @@ def submit_report():
     existing = StaffActivityReport.query.filter_by(staff_id=current_user.id, report_date=today).first()
 
     if request.method == "POST":
-        if existing:
-            flash("You have already submitted a report for today.", "warning")
-            return redirect(url_for("staff.dashboard"))
-
+        # Extract form data
         new_leads = request.form.get("new_leads", 0, type=int)
         visits = request.form.get("visits", 0, type=int)
         calls = request.form.get("calls", 0, type=int)
@@ -137,22 +144,35 @@ def submit_report():
         challenges = request.form.get("challenges", "").strip()
         tomorrow_plan = request.form.get("tomorrow_plan", "").strip()
 
-        report = StaffActivityReport(
-            staff_id=current_user.id,
-            report_date=today,
-            new_leads=new_leads,
-            visits=visits,
-            calls=calls,
-            recoveries=recoveries,
-            challenges=challenges,
-            tomorrow_plan=tomorrow_plan
-        )
-        db.session.add(report)
+        if existing:
+            # Update the existing record
+            existing.new_leads = new_leads
+            existing.visits = visits
+            existing.calls = calls
+            existing.recoveries = recoveries
+            existing.challenges = challenges
+            existing.tomorrow_plan = tomorrow_plan
+            
+            flash("Daily report updated successfully!", "success")
+        else:
+            # Create a brand new record
+            report = StaffActivityReport(
+                staff_id=current_user.id,
+                report_date=today,
+                new_leads=new_leads,
+                visits=visits,
+                calls=calls,
+                recoveries=recoveries,
+                challenges=challenges,
+                tomorrow_plan=tomorrow_plan
+            )
+            db.session.add(report)
+            flash("Daily report submitted successfully!", "success")
+            
         db.session.commit()
-        
-        flash("Daily report submitted successfully!", "success")
         return redirect(url_for("staff.dashboard"))
 
+    # Passing 'existing' to the template allows you to pre-fill the form inputs
     return render_template("staff/submit_report.html", today=today, existing=existing)
 
 @staff_bp.route("/recovery-task/<int:task_id>/update", methods=["POST"])

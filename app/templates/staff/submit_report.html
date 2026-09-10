@@ -1,69 +1,75 @@
 {% extends "base.html" %}
-{% block title %}Submit Daily Report — Vantage{% endblock %}
+{% block title %}Submit Activity Report — Vantage{% endblock %}
 
 {% block content %}
-<div class="mb-5">
-    <h1 class="text-xl font-bold text-brand-900">End-of-Day Activity Report</h1>
-    <p class="text-gray-500 text-sm mt-0.5">Date: {{ today }}</p>
-</div>
-
-{% if existing %}
-<div class="bg-blue-50 border border-blue-200 rounded-2xl p-5 text-center space-y-2">
-    <p class="text-sm font-semibold text-blue-900">You have already submitted your report for today.</p>
-    <p class="text-xs text-blue-700">Thank you! You can check your dashboard for updates.</p>
-    <div class="pt-2">
-        <a href="{{ url_for('staff.dashboard') }}" class="inline-block bg-brand-900 text-white rounded-xl px-4 py-2 text-xs font-semibold">
-            Return to Dashboard
-        </a>
+<div class="max-w-2xl mx-auto bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mt-8">
+    
+    <div class="mb-6">
+        <h1 class="text-xl font-bold text-gray-800">
+            {% if existing %}Edit Today's Report{% else %}Submit Daily Report{% endif %}
+        </h1>
+        <p class="text-sm text-gray-500 mt-1">Date: {{ today.strftime('%B %d, %Y') }}</p>
     </div>
-</div>
-{% else %}
-<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-    <form method="POST" class="space-y-4">
-        
-        <div class="grid grid-cols-2 gap-3">
+
+    <form method="POST" action="{{ url_for('staff.submit_report') }}" class="space-y-5">
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-2 gap-4">
             <div>
                 <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">New Leads</label>
-                <input type="number" name="new_leads" value="0" min="0" required
-                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <input type="number" name="new_leads" min="0" required
+                       value="{{ existing.new_leads if existing else '' }}"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
+            
             <div>
                 <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Visits</label>
-                <input type="number" name="visits" value="0" min="0" required
-                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <input type="number" name="visits" min="0" required
+                       value="{{ existing.visits if existing else '' }}"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
+            
             <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Calls</label>
-                <input type="number" name="calls" value="0" min="0" required
-                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Calls Made</label>
+                <input type="number" name="calls" min="0" required
+                       value="{{ existing.calls if existing else '' }}"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
+            
             <div>
                 <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Recoveries</label>
-                <input type="number" name="recoveries" value="0" min="0" required
-                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <input type="number" name="recoveries" min="0" required
+                       value="{{ existing.recoveries if existing else '' }}"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
         </div>
 
+        <!-- Text Areas (Note: values go BETWEEN the tags, not in a value="" attribute) -->
         <div>
             <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Challenges Faced</label>
-            <textarea name="challenges" rows="3" placeholder="Describe any roadblocks today..."
-                      class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+            <textarea name="challenges" rows="3" 
+                      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-400"
+                      placeholder="Any pushback from merchants, terminal errors, etc.">{{ existing.challenges if existing else '' }}</textarea>
         </div>
 
         <div>
-            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Tomorrow's Plan</label>
-            <textarea name="tomorrow_plan" rows="3" placeholder="What are your primary goals for tomorrow..."
-                      class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Plan for Tomorrow</label>
+            <textarea name="tomorrow_plan" rows="3"
+                      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 placeholder-gray-400"
+                      placeholder="Areas to visit, specific merchants to follow up with...">{{ existing.tomorrow_plan if existing else '' }}</textarea>
         </div>
 
-        <button type="submit"
-                class="w-full bg-brand-900 text-white rounded-xl py-3 text-sm font-semibold hover:bg-brand-700 transition">
-            Submit Daily Report
-        </button>
+        <!-- Submit Button changes text contextually -->
+        <div class="pt-2">
+            <button type="submit" class="w-full bg-brand-900 text-white rounded-lg px-4 py-2.5 text-sm font-semibold hover:bg-brand-700 transition shadow-sm">
+                {% if existing %}
+                    Update Report
+                {% else %}
+                    Submit Report
+                {% endif %}
+            </button>
+        </div>
+        
     </form>
 </div>
-{% endif %}
 {% endblock %}

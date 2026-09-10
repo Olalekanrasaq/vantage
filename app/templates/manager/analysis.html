@@ -28,7 +28,7 @@
     <!-- AI Response Container -->
     <div id="ai-response-container" class="mt-8 hidden border-t border-gray-100 pt-6">
         
-        <!-- Markdown Text Response (Uses Tailwind Typography 'prose') -->
+        <!-- Markdown Text Response -->
         <div id="ai-text-response" class="prose prose-brand max-w-none text-gray-700 mb-8 text-sm md:text-base"></div>
         
         <!-- Dynamic Data Table -->
@@ -58,22 +58,75 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 <script>
+// 1. On page load, check if we have a saved response and restore it instantly
+document.addEventListener("DOMContentLoaded", () => {
+    const savedData = sessionStorage.getItem('vantage_ai_response');
+    const savedPrompt = sessionStorage.getItem('vantage_ai_prompt');
+    
+    if (savedData && savedPrompt) {
+        document.getElementById('ai-prompt').value = savedPrompt;
+        renderResponse(JSON.parse(savedData));
+    }
+});
+
+// 2. Reusable function to draw the UI based on data
+function renderResponse(data) {
+    const container = document.getElementById('ai-response-container');
+    const textEl = document.getElementById('ai-text-response');
+    const tableContainer = document.getElementById('ai-table-container');
+    
+    container.classList.remove('hidden');
+    
+    if (data.error) {
+        textEl.innerHTML = `<span class="text-red-500 font-semibold flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> ${data.error}</span>`;
+        tableContainer.classList.add('hidden');
+        return;
+    }
+
+    // Render Markdown Text
+    textEl.innerHTML = marked.parse(data.text_response);
+
+    // Render Table
+    if (data.has_table && data.table_data && data.table_data.length > 0) {
+        tableContainer.classList.remove('hidden');
+        
+        let headHTML = '<tr>';
+        data.table_headers.forEach(h => { headHTML += `<th class="px-4 py-3">${h}</th>`; });
+        headHTML += '</tr>';
+        document.getElementById('ai-table-head').innerHTML = headHTML;
+        
+        let bodyHTML = '';
+        data.table_data.forEach(row => {
+            bodyHTML += '<tr class="hover:bg-gray-50 transition">';
+            row.forEach(cell => { bodyHTML += `<td class="px-4 py-3 text-gray-700">${cell}</td>`; });
+            bodyHTML += '</tr>';
+        });
+        document.getElementById('ai-table-body').innerHTML = bodyHTML;
+
+        // Attach CSV Download Logic
+        document.getElementById('download-csv-btn').onclick = () => downloadCSV(data.table_headers, data.table_data);
+    } else {
+        tableContainer.classList.add('hidden');
+    }
+}
+
+// 3. Handle the 'Analyze' button click
 document.getElementById('ask-ai-btn').addEventListener('click', async () => {
     const prompt = document.getElementById('ai-prompt').value.trim();
     if (!prompt) return;
 
     const btn = document.getElementById('ask-ai-btn');
     const spinner = document.getElementById('ai-spinner');
-    const container = document.getElementById('ai-response-container');
     const textEl = document.getElementById('ai-text-response');
     const tableContainer = document.getElementById('ai-table-container');
+    const container = document.getElementById('ai-response-container');
     
     // UI Loading State
     btn.disabled = true;
     spinner.classList.remove('hidden');
     container.classList.remove('hidden');
-    textEl.innerHTML = '<div class="flex items-center gap-2 text-gray-500 animate-pulse"><div class="w-2 h-2 bg-brand-500 rounded-full"></div> Analyzing your full database...</div>';
     tableContainer.classList.add('hidden');
+    textEl.innerHTML = '<div class="flex items-center gap-2 text-gray-500 animate-pulse"><div class="w-2 h-2 bg-brand-500 rounded-full"></div> Analyzing your database...</div>';
 
     try {
         const response = await fetch("{{ url_for('manager.ai_analyze') }}", {
@@ -84,36 +137,14 @@ document.getElementById('ask-ai-btn').addEventListener('click', async () => {
         
         const data = await response.json();
         
-        if (data.error) {
-            textEl.innerHTML = `<span class="text-red-500 font-semibold flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> ${data.error}</span>`;
-            return;
+        // Save to browser memory ONLY if successful
+        if (!data.error) {
+            sessionStorage.setItem('vantage_ai_prompt', prompt);
+            sessionStorage.setItem('vantage_ai_response', JSON.stringify(data));
         }
-
-        // Render Text Response using marked.js
-        textEl.innerHTML = marked.parse(data.text_response);
-
-        // Render Table if requested
-        if (data.has_table && data.table_data && data.table_data.length > 0) {
-            tableContainer.classList.remove('hidden');
-            
-            // Render Headers
-            let headHTML = '<tr>';
-            data.table_headers.forEach(h => { headHTML += `<th class="px-4 py-3">${h}</th>`; });
-            headHTML += '</tr>';
-            document.getElementById('ai-table-head').innerHTML = headHTML;
-            
-            // Render Body
-            let bodyHTML = '';
-            data.table_data.forEach(row => {
-                bodyHTML += '<tr class="hover:bg-gray-50 transition">';
-                row.forEach(cell => { bodyHTML += `<td class="px-4 py-3 text-gray-700">${cell}</td>`; });
-                bodyHTML += '</tr>';
-            });
-            document.getElementById('ai-table-body').innerHTML = bodyHTML;
-
-            // Attach CSV Download Logic
-            document.getElementById('download-csv-btn').onclick = () => downloadCSV(data.table_headers, data.table_data);
-        }
+        
+        // Render it
+        renderResponse(data);
 
     } catch (error) {
         textEl.innerHTML = `<span class="text-red-500 font-semibold flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> A network error occurred while reaching the AI.</span>`;
@@ -127,7 +158,6 @@ function downloadCSV(headers, rows) {
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += headers.join(",") + "\n";
     rows.forEach(row => {
-        // Wrap cells in quotes to handle commas inside text seamlessly
         let formattedRow = row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",");
         csvContent += formattedRow + "\n";
     });

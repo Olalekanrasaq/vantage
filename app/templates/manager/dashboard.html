@@ -39,6 +39,46 @@
 </div>
 {% endif %}
 
+<!-- Latest Staff Activity Reports -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mt-6">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-base font-bold text-gray-800">Latest Staff Activity Reports</h2>
+        <a href="#" class="text-xs font-semibold text-brand-600 hover:text-brand-800">View All</a>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm whitespace-nowrap">
+            <thead class="bg-gray-50 text-gray-600 uppercase text-[10px] font-bold">
+                <tr>
+                    <th class="px-4 py-3">Date</th>
+                    <th class="px-4 py-3">Staff Member</th>
+                    <th class="px-4 py-3 text-center">New Leads</th>
+                    <th class="px-4 py-3 text-center">Visits</th>
+                    <th class="px-4 py-3 text-center">Calls</th>
+                    <th class="px-4 py-3 text-center">Recoveries</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for report in latest_staff_reports %}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-4 py-3 text-gray-500 text-xs">{{ report.report_date.strftime('%b %d, %Y') }}</td>
+                    <td class="px-4 py-3 font-medium text-gray-800">{{ report.staff.username }}</td>
+                    <td class="px-4 py-3 text-gray-700 text-center font-medium">{{ report.new_leads }}</td>
+                    <td class="px-4 py-3 text-gray-700 text-center font-medium">{{ report.visits }}</td>
+                    <td class="px-4 py-3 text-gray-700 text-center font-medium">{{ report.calls }}</td>
+                    <td class="px-4 py-3 text-gray-700 text-center font-medium">{{ report.recoveries }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-4 py-8 text-center text-gray-400 text-sm">
+                        No activity reports have been submitted yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <!-- Today's report tables -->
 <h2 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Today's Report</h2>
 {% include "partials/dashboard_tables.html" %}
