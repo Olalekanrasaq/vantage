@@ -100,8 +100,8 @@
       <span>Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></span>
       <span>Days: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></span>
       <span>Target:
-        <strong class="{% if row.target_met|lower == 'true' %}text-green-600{% else %}text-red-500{% endif %}">
-          {{ 'Met' if row.target_met|lower == 'true' else 'Not Met' }}
+        <strong class="{% if row.payment_value >= 100000 %}text-green-600{% else %}text-red-500{% endif %}">
+          {{ 'Met' if row.payment_value >= 100000 else 'Not Met' }}
         </strong>
       </span>
     </div>

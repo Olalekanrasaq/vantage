@@ -182,11 +182,12 @@ def dashboard():
     )
     staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
 
+    max_date = db.session.query(func.max(StaffActivityReport.report_date)).scalar_subquery()
     latest_staff_reports = StaffActivityReport.query.join(Staff).filter(
         Staff.manager_id == current_user.id
     ).filter(
-        StaffActivityReport.report_date == today
-        ).order_by(StaffActivityReport.created_at.desc()).all()
+        StaffActivityReport.report_date == max_date
+    ).order_by(StaffActivityReport.created_at.desc()).all()
 
     return render_template(
         "manager/dashboard.html",

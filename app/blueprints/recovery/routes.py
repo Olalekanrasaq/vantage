@@ -25,8 +25,12 @@ def center():
     today = date.today()
     report_date = today - timedelta(days=1)
 
-    # Fetch non-transacting terminals for the manager
-    ntt_rows = NTTReport.query.filter_by(manager_id=current_user.id, report_date=report_date).all()
+    # Fetch non-transacting terminals for the manager using the latest available report date
+    latest_date = db.session.query(db.func.max(NTTReport.report_date)).filter_by(manager_id=current_user.id).scalar()
+
+    ntt_rows = []
+    if latest_date:
+        ntt_rows = NTTReport.query.filter_by(manager_id=current_user.id, report_date=latest_date).all()
     
     # Fetch existing active/pending recovery tasks
     tasks = RecoveryTask.query.filter_by(
@@ -43,7 +47,7 @@ def center():
         tasks=tasks,
         tasked_business_names=tasked_business_names,
         staffs=staffs,
-        report_date=report_date
+        report_date=latest_date
     )
 
 

@@ -295,9 +295,9 @@ def businesses():
         query = query.filter(WeeklyReport.business_name.ilike(f"%{search}%"))
 
     if target_met_only:
-        query = query.filter(db.func.lower(WeeklyReport.target_met) == "true")
+        query = query.filter(WeeklyReport.payment_value >= 100000)
     elif target_not_met_only:
-        query = query.filter(db.func.lower(WeeklyReport.target_met) != "true")
+        query = query.filter(WeeklyReport.payment_value < 100000)
 
     weekly_rows = query.order_by(WeeklyReport.payment_value.desc()).all()
 
