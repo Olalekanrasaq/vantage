@@ -116,16 +116,13 @@ def _get_dashboard_metrics(manager_id, report_date, prev_date, date_2_days_ago):
         "delta_retention": delta(retention_count, prev_retention),
     }
 
-
-def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=None):
+def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=None, weekly_page=1, ntt_page=1, retention_page=1):
     """
-    Fetch the three dashboard tables.
-    business_filter: optional list of business names to restrict to (for staff).
+    Fetch the three dashboard tables with pagination.
     """
-
     weekly_target = 100000
+    
     # Weekly not-met table
-    # if report_date is not available, fallback to prev_date
     if not WeeklyReport.query.filter_by(manager_id=manager_id, report_date=report_date).first():
         report_date = prev_date
     weekly_q = WeeklyReport.query.filter_by(
@@ -156,9 +153,10 @@ def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=No
         ntt_q = ntt_q.filter(NTTReport.business_name.in_(business_filter))
         retention_q = retention_q.filter(RetentionReport.business_name.in_(business_filter))
 
-    weekly_not_met = weekly_q.order_by(WeeklyReport.payment_value.desc()).all()
-    ntt_list = ntt_q.order_by(NTTReport.days_last_transact.asc()).all()
-    retention_list = retention_q.order_by(RetentionReport.days_decline.asc()).all()
+    # Paginate each query instead of using .all()
+    weekly_not_met = weekly_q.order_by(WeeklyReport.payment_value.desc()).paginate(page=weekly_page, per_page=10, error_out=False)
+    ntt_list = ntt_q.order_by(NTTReport.days_last_transact.asc()).paginate(page=ntt_page, per_page=10, error_out=False)
+    retention_list = retention_q.order_by(RetentionReport.days_decline.asc()).paginate(page=retention_page, per_page=10, error_out=False)
 
     return weekly_not_met, ntt_list, retention_list
 
@@ -169,6 +167,12 @@ def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=No
 @login_required
 @manager_required
 def dashboard():
+    # Grab independent pagination parameters from the URL
+    weekly_page = request.args.get('weekly_page', 1, type=int)
+    ntt_page = request.args.get('ntt_page', 1, type=int)
+    retention_page = request.args.get('retention_page', 1, type=int)
+    staff_page = request.args.get('staff_page', 1, type=int)
+
     today = date.today()
     todays_report_date = today - timedelta(days=1)
     yesterdays_report_date = today - timedelta(days=2)
@@ -177,17 +181,21 @@ def dashboard():
     metrics = _get_dashboard_metrics(
         current_user.id, todays_report_date, yesterdays_report_date, date_2_days_ago
     )
+    
+    # Pass page numbers into the helper function
     weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
-        current_user.id, todays_report_date, yesterdays_report_date
+        current_user.id, todays_report_date, yesterdays_report_date, 
+        weekly_page=weekly_page, ntt_page=ntt_page, retention_page=retention_page
     )
     staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
 
+    # staff activity table - update to use pagination
     max_date = db.session.query(func.max(StaffActivityReport.report_date)).scalar_subquery()
     latest_staff_reports = StaffActivityReport.query.join(Staff).filter(
         Staff.manager_id == current_user.id
     ).filter(
         StaffActivityReport.report_date == max_date
-    ).order_by(StaffActivityReport.created_at.desc()).all()
+    ).order_by(StaffActivityReport.created_at.desc()).paginate(page=staff_page, per_page=10, error_out=False)
 
     return render_template(
         "manager/dashboard.html",
@@ -199,7 +207,6 @@ def dashboard():
         staffs=staffs,
         latest_staff_reports=latest_staff_reports,
     )
-
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
 
@@ -354,13 +361,28 @@ def delete_staff(staff_id):
 
 # ── Business assignment ───────────────────────────────────────────────────────
 
+from sqlalchemy import func
+from datetime import date, timedelta
+from flask import request, render_template, redirect, url_for, flash, Response
+
 PAYMENT_BANDS = {
     "lt100k":    (0,          100_000),
     "100k_500k": (100_000,    500_000),
     "500k_1m":   (500_000,  1_000_000),
-    "1m_2m":   (1_000_000,  2_000_000),
-    "gt2m":    (2_000_000,  float("inf")),
+    "1m_2m":     (1_000_000,  2_000_000),
+    "gt2m":      (2_000_000,  float("inf")),
 }
+
+def _preserve_filters():
+    """Carry search/filter params back to the businesses page after POST."""
+    params = []
+    # Added the new filters to the preserved list
+    for key in ("search", "band", "ntt_only", "target_met_only", "target_not_met_only", "newly_added_only"): 
+        val = request.form.get(key) or request.args.get(key, "")
+        if val:
+            params.append(f"{key}={val}")
+    return ("?" + "&".join(params)) if params else ""
+
 
 @manager_bp.route("/businesses")
 @login_required
@@ -369,23 +391,33 @@ def businesses():
     today = date.today()
     latest_date = today - timedelta(days=1)
     date_2_days_ago = today - timedelta(days=2)
-
     weekly_target = 100000
 
     search = request.args.get("search", "").strip()
     band = request.args.get("band", "")
     ntt_only = request.args.get("ntt_only", "")
     target_met_only = request.args.get("target_met_only", "") 
-    target_not_met_only = request.args.get("target_not_met_only", "") # <--- New filter
+    target_not_met_only = request.args.get("target_not_met_only", "")
+    newly_added_only = request.args.get("newly_added_only", "") # <--- New filter
 
     download = request.args.get("download", "")
 
     if not WeeklyReport.query.filter_by(manager_id=current_user.id, report_date=latest_date).first():
         latest_date = date_2_days_ago
 
-    query = db.session.query(WeeklyReport).filter_by(
-        manager_id=current_user.id,
-        report_date=latest_date,
+    # --- SUBQUERY FOR FIRST SEEN DATE ---
+    # Find the earliest report_date for every business to determine when they were newly added
+    first_seen_sub = db.session.query(
+        WeeklyReport.business_name,
+        func.min(WeeklyReport.report_date).label('first_seen_date')
+    ).filter_by(manager_id=current_user.id).group_by(WeeklyReport.business_name).subquery()
+
+    # Join the subquery to our main query
+    query = db.session.query(WeeklyReport, first_seen_sub.c.first_seen_date).join(
+        first_seen_sub, WeeklyReport.business_name == first_seen_sub.c.business_name
+    ).filter(
+        WeeklyReport.manager_id == current_user.id,
+        WeeklyReport.report_date == latest_date,
     )
 
     if search:
@@ -397,13 +429,25 @@ def businesses():
         if high != float("inf"):
             query = query.filter(WeeklyReport.payment_value < high)
             
-    # Apply Target filters (mutually exclusive logic)
+    # Apply Target filters
     if target_met_only:
         query = query.filter(WeeklyReport.payment_value >= weekly_target)
     elif target_not_met_only:
         query = query.filter(WeeklyReport.payment_value < weekly_target)
+        
+    # Apply New Business filter (First seen within the last 7 days)
+    if newly_added_only:
+        seven_days_ago = today - timedelta(days=7)
+        query = query.filter(first_seen_sub.c.first_seen_date >= seven_days_ago)
 
-    weekly_rows = query.order_by(WeeklyReport.payment_value.desc()).all()
+    # Fetch results
+    results = query.order_by(WeeklyReport.payment_value.desc()).all()
+    
+    # Map the first_seen_date into the report object dynamically for the template
+    weekly_rows = []
+    for report, first_seen in results:
+        report.first_seen_date = first_seen
+        weekly_rows.append(report)
 
     if ntt_only:
         ntt_names = {
@@ -415,14 +459,15 @@ def businesses():
     # --- DOWNLOAD LOGIC ---
     if download == "csv":
         def generate_csv():
-            yield "Business Name,Value (NGN),Volume,Target Met,Days Inactive\n"
+            yield "Business Name,Value (NGN),Volume,Target Met,Days Inactive,Date Added\n"
             for r in weekly_rows:
                 name = f'"{r.business_name}"' 
                 val = r.payment_value or 0
                 vol = r.payment_vol or 0
                 t_met = r.target_met or 'False'
                 days = r.days_last_transact or ''
-                yield f"{name},{val},{vol},{t_met},{days}\n"
+                date_added = r.first_seen_date or ''
+                yield f"{name},{val},{vol},{t_met},{days},{date_added}\n"
         
         return Response(
             generate_csv(), 
@@ -443,21 +488,11 @@ def businesses():
         band=band,
         ntt_only=ntt_only,
         target_met_only=target_met_only, 
-        target_not_met_only=target_not_met_only, # <--- Pass to template
+        target_not_met_only=target_not_met_only,
+        newly_added_only=newly_added_only, # <--- Pass to template
         payment_bands=PAYMENT_BANDS,
         latest_date=latest_date,
     )
-
-def _preserve_filters():
-    """Carry search/filter params back to the businesses page after POST."""
-    params = []
-    # Added target_not_met_only to the preserved list
-    for key in ("search", "band", "ntt_only", "target_met_only", "target_not_met_only"): 
-        val = request.form.get(key, "")
-        if val:
-            params.append(f"{key}={val}")
-    return ("?" + "&".join(params)) if params else ""
-
 
 @manager_bp.route("/businesses/assign", methods=["POST"])
 @login_required
@@ -465,16 +500,28 @@ def _preserve_filters():
 def assign_business():
     staff_id = request.form.get("staff_id", type=int)
     business_name = request.form.get("business_name", "").strip()
+    
+    # Check if a staff member was selected
+    if not staff_id:
+        flash("Please select a staff member.", "error")
+        return redirect(url_for("manager.businesses") + _preserve_filters())
+        
     staff = Staff.query.filter_by(id=staff_id, manager_id=current_user.id).first_or_404()
 
     # Get or create the Business record
     business = Business.query.filter_by(
         manager_id=current_user.id, name=business_name
     ).first()
+    
+    if not business:
+        business = Business(manager_id=current_user.id, name=business_name, is_active=True)
+        db.session.add(business)
+        db.session.commit() # Commit so it gets an ID
 
     existing = StaffBusinessAssignment.query.filter_by(
         business_id=business.id
     ).first()
+    
     if existing:
         # Fetch the name of the staff who currently owns this assignment
         current_staff = Staff.query.get(existing.staff_id)
@@ -490,6 +537,49 @@ def assign_business():
     flash(f"'{business_name}' assigned to {staff.username}.", "success")
     return redirect(url_for("manager.businesses") + _preserve_filters())
 
+@manager_bp.route("/businesses/assign/bulk", methods=["POST"])
+@login_required
+@manager_required
+def assign_business_bulk():
+    """Handles both single and bulk assignments, splitting them across selected staff."""
+    staff_ids = request.form.getlist("staff_ids")
+    business_names = request.form.getlist("business_names")
+    
+    if not staff_ids or not business_names:
+        flash("You must select at least one staff member and one business.", "error")
+        return redirect(url_for("manager.businesses") + _preserve_filters())
+        
+    staffs = Staff.query.filter(Staff.id.in_(staff_ids), Staff.manager_id == current_user.id).all()
+    if not staffs:
+        flash("Invalid staff selection.", "error")
+        return redirect(url_for("manager.businesses") + _preserve_filters())
+        
+    staff_count = len(staffs)
+    
+    for idx, b_name in enumerate(business_names):
+        # Round-robin assignment to evenly distribute businesses among selected staff
+        assigned_staff = staffs[idx % staff_count]
+        
+        # Ensure the Business record exists in the master table
+        business = Business.query.filter_by(manager_id=current_user.id, name=b_name).first()
+        if not business:
+            business = Business(manager_id=current_user.id, name=b_name, is_active=True)
+            db.session.add(business)
+            db.session.commit() # Commit to generate the ID
+            
+        # Overwrite existing assignment if it exists
+        existing = StaffBusinessAssignment.query.filter_by(business_id=business.id).first()
+        if existing:
+            db.session.delete(existing)
+            
+        # Create new assignment
+        new_assignment = StaffBusinessAssignment(staff_id=assigned_staff.id, business_id=business.id)
+        db.session.add(new_assignment)
+        
+    db.session.commit()
+    flash(f"Successfully assigned {len(business_names)} businesses to {staff_count} staff member(s).", "success")
+    return redirect(url_for("manager.businesses") + _preserve_filters())
+
 
 @manager_bp.route("/businesses/unassign/<int:assignment_id>", methods=["POST"])
 @login_required
@@ -500,16 +590,6 @@ def unassign_business(assignment_id):
     db.session.commit()
     flash("Business unassigned.", "info")
     return redirect(url_for("manager.businesses") + _preserve_filters())
-
-
-def _preserve_filters():
-    """Carry search/filter params back to the businesses page after POST."""
-    params = []
-    for key in ("search", "band", "ntt_only"):
-        val = request.form.get(key, "")
-        if val:
-            params.append(f"{key}={val}")
-    return ("?" + "&".join(params)) if params else ""
 
 
 # ── Manual upload ─────────────────────────────────────────────────────────────
@@ -598,7 +678,10 @@ def leaderboard():
 @login_required
 @manager_required
 def field_visits():
-    visits = FieldVisit.query.filter_by(manager_id=current_user.id).order_by(FieldVisit.visit_date.desc()).all()
+    page = request.args.get('page', 1, type=int)
+    # Replaced .all() with .paginate()
+    visits = FieldVisit.query.filter_by(manager_id=current_user.id).order_by(FieldVisit.visit_date.desc()).paginate(page=page, per_page=10, error_out=False)
+        
     return render_template("manager/field_visits.html", visits=visits)
 
 

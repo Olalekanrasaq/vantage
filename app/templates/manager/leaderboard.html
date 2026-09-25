@@ -8,7 +8,12 @@
 </div>
 
 <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-    <div class="table-scroll">
+    {% if leaderboard %}
+    
+    <!-- ========================================== -->
+    <!-- DESKTOP VIEW: STANDARD TABLE               -->
+    <!-- ========================================== -->
+    <div class="hidden md:block table-scroll">
         <table class="w-full text-left text-xs">
             <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide border-b border-gray-100">
                 <tr>
@@ -25,7 +30,7 @@
             <tbody class="divide-y divide-gray-50">
                 {% for entry in leaderboard %}
                 <tr class="hover:bg-gray-50/50">
-                    <td class="px-4 py-3 font-bold text-gray-700">
+                    <td class="px-4 py-3 font-bold text-gray-700 whitespace-nowrap">
                         {% if loop.index == 1 %}🥇 1st
                         {% elif loop.index == 2 %}🥈 2nd
                         {% elif loop.index == 3 %}🥉 3rd
@@ -42,13 +47,72 @@
                     <td class="px-4 py-3 text-center font-medium text-green-600">{{ entry.recoveries }}</td>
                     <td class="px-4 py-3 text-right font-bold text-brand-900 text-sm">{{ entry.score }}</td>
                 </tr>
-                {% else %}
-                <tr>
-                    <td colspan="7" class="px-4 py-8 text-center text-gray-400">No performance data available yet.</td>
-                </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+
+    <!-- ========================================== -->
+    <!-- MOBILE VIEW: CARDS                         -->
+    <!-- ========================================== -->
+    <div class="block md:hidden divide-y divide-gray-100">
+        {% for entry in leaderboard %}
+        <div class="p-4 flex flex-col space-y-3">
+            
+            <!-- Rank, Staff & Score Header -->
+            <div class="flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="text-xl font-bold w-6 text-center">
+                        {% if loop.index == 1 %}🥇
+                        {% elif loop.index == 2 %}🥈
+                        {% elif loop.index == 3 %}🥉
+                        {% else %}<span class="text-gray-400 text-sm">#{{ loop.index }}</span>{% endif %}
+                    </div>
+                    <div>
+                        <div class="font-semibold text-gray-800 text-sm">{{ entry.staff.full_name or entry.staff.username }}</div>
+                        <div class="text-xs text-gray-400">@{{ entry.staff.username }}</div>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-[9px] uppercase text-gray-400 font-bold tracking-widest">Score</div>
+                    <div class="font-bold text-brand-900 text-base leading-none mt-0.5">{{ entry.score }}</div>
+                </div>
+            </div>
+
+            <!-- Metrics Grid -->
+            <div class="grid grid-cols-5 gap-1 text-center text-xs bg-gray-50 p-2 rounded">
+                <div>
+                    <div class="text-gray-400 uppercase text-[9px] font-semibold tracking-wide">Tasks</div>
+                    <div class="font-bold text-gray-700 mt-0.5">{{ entry.resolved_tasks }}</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 uppercase text-[9px] font-semibold tracking-wide">Visits</div>
+                    <div class="font-bold text-gray-700 mt-0.5">{{ entry.visits }}</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 uppercase text-[9px] font-semibold tracking-wide">Calls</div>
+                    <div class="font-bold text-gray-700 mt-0.5">{{ entry.calls }}</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 uppercase text-[9px] font-semibold tracking-wide">Leads</div>
+                    <div class="font-bold text-gray-700 mt-0.5">{{ entry.leads }}</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 uppercase text-[9px] font-semibold tracking-wide">Recov</div>
+                    <div class="font-bold text-green-600 mt-0.5">{{ entry.recoveries }}</div>
+                </div>
+            </div>
+
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <!-- Empty State -->
+    <div class="px-4 py-12 text-center text-gray-400 text-sm">
+        No performance data available yet.
+    </div>
+    {% endif %}
+
 </div>
 {% endblock %}
