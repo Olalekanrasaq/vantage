@@ -5,7 +5,7 @@ from functools import wraps
 
 from app.blueprints.staff import staff_bp
 from app.extensions import db
-from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask, FieldVisit, Business
+from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask, FieldVisit, Business, CallLog
 from app.blueprints.manager.routes import _get_dashboard_metrics, _get_dashboard_tables
 
 import os
@@ -200,28 +200,39 @@ def visits():
     assigned_businesses = current_user.assigned_businesses
 
     if request.method == "POST":
-        business_id = request.form.get("business_id", type=int)
-        purpose = request.form.get("purpose", "").strip()
-        issue = request.form.get("issue", "").strip()
-        action_taken = request.form.get("action_taken", "").strip()
-        result = request.form.get("result", "Pending")
-        next_follow_up_str = request.form.get("next_follow_up", "").strip()
+        log_type = request.form.get("log_type")
 
-        next_follow_up = None
-        if next_follow_up_str:
-            try:
-                next_follow_up = date.fromisoformat(next_follow_up_str)
-            except ValueError:
-                pass
+        # ==========================================
+        # HANDLE FIELD VISIT SUBMISSION
+        # ==========================================
+        if log_type == "visit":
+            business_id = request.form.get("business_id", type=int)
+            purpose = request.form.get("purpose", "").strip()
+            issue = request.form.get("issue", "").strip()
+            action_taken = request.form.get("action_taken", "").strip()
+            result = request.form.get("result", "Pending")
+            next_follow_up_str = request.form.get("next_follow_up", "").strip()
 
-        if not business_id or not purpose:
-            flash("Business and purpose are required.", "error")
-            return redirect(url_for("staff.visits"))
+            next_follow_up = None
+            if next_follow_up_str:
+                try:
+                    next_follow_up = date.fromisoformat(next_follow_up_str)
+                except ValueError:
+                    pass
 
-        # Handle image upload
-        image_filename = None
-        file = request.files.get("visit_image")
-        if file and file.filename:
+            if not business_id or not purpose:
+                flash("Business and purpose are required.", "error")
+                return redirect(url_for("staff.visits"))
+
+            # Handle image upload
+            file = request.files.get("visit_image")
+            
+            # Check if file is completely missing or empty
+            if not file or not file.filename:
+                flash("A visit picture/proof is mandatory to log a field visit.", "error")
+                return redirect(url_for("staff.visits"))
+
+            # Proceed to process the uploaded image
             ext = file.filename.rsplit(".", 1)[1].lower() if "." in file.filename else ""
             if ext in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
                 filename = secure_filename(f"visit_{current_user.id}_{today}_{file.filename}")
@@ -233,29 +244,58 @@ def visits():
                 flash("Invalid image format. Allowed formats: png, jpg, jpeg, webp.", "error")
                 return redirect(url_for("staff.visits"))
 
-        visit = FieldVisit(
-            manager_id=current_user.manager_id,
-            staff_id=current_user.id,
-            business_id=business_id,
-            visit_date=today,
-            purpose=purpose,
-            issue=issue,
-            action_taken=action_taken,
-            result=result,
-            next_follow_up=next_follow_up,
-            image_filename=image_filename
-        )
-        db.session.add(visit)
-        db.session.commit()
+            visit = FieldVisit(
+                manager_id=current_user.manager_id,
+                staff_id=current_user.id,
+                business_id=business_id,
+                visit_date=today,
+                purpose=purpose,
+                issue=issue,
+                action_taken=action_taken,
+                result=result,
+                next_follow_up=next_follow_up,
+                image_filename=image_filename
+            )
+            db.session.add(visit)
+            db.session.commit()
+            flash("Field visit logged successfully.", "success")
+            
+        # ==========================================
+        # HANDLE CALL LOG SUBMISSION
+        # ==========================================
+        elif log_type == "call":
+            business_id = request.form.get("business_id", type=int)
+            purpose = request.form.get("purpose", "").strip()
+            customer_response = request.form.get("customer_response", "").strip()
+            result = request.form.get("result", "Pending")
+            
+            if not business_id or not purpose:
+                flash("Business and purpose are required.", "error")
+                return redirect(url_for("staff.visits"))
+                
+            call_log = CallLog(
+                manager_id=current_user.manager_id,
+                staff_id=current_user.id,
+                business_id=business_id,
+                call_date=today,
+                purpose=purpose,
+                customer_response=customer_response,
+                result=result
+            )
+            db.session.add(call_log)
+            db.session.commit()
+            flash("Call record logged successfully.", "success")
 
-        flash("Field visit logged successfully.", "success")
         return redirect(url_for("staff.visits"))
 
+    # Fetch both histories
     staff_visits = FieldVisit.query.filter_by(staff_id=current_user.id).order_by(FieldVisit.visit_date.desc()).all()
+    staff_calls = CallLog.query.filter_by(staff_id=current_user.id).order_by(CallLog.call_date.desc()).all()
 
     return render_template(
         "staff/visits.html",
         visits=staff_visits,
+        calls=staff_calls,
         assigned_businesses=assigned_businesses,
         today=today
     )

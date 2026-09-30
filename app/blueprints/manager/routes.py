@@ -15,7 +15,7 @@ from app.extensions import db
 from app.models import (
     Staff, Business, StaffBusinessAssignment, BusinessManager,
     DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog,
-    StaffActivityReport, RecoveryTask, FieldVisit
+    StaffActivityReport, RecoveryTask, FieldVisit, CallLog
 )
 from app.services.extraction_service import run_extraction
 from dotenv import load_dotenv
@@ -679,10 +679,22 @@ def leaderboard():
 @manager_required
 def field_visits():
     page = request.args.get('page', 1, type=int)
-    # Replaced .all() with .paginate()
-    visits = FieldVisit.query.filter_by(manager_id=current_user.id).order_by(FieldVisit.visit_date.desc()).paginate(page=page, per_page=10, error_out=False)
+    calls_page = request.args.get('calls_page', 1, type=int)
+    
+    # 1. Fetch Field Visits
+    visits = FieldVisit.query.filter_by(manager_id=current_user.id)\
+        .order_by(FieldVisit.visit_date.desc())\
+        .paginate(page=page, per_page=10, error_out=False)
         
-    return render_template("manager/field_visits.html", visits=visits)
+    # 2. Fetch Call Logs (Past two days only)
+    two_days_ago = date.today() - timedelta(days=2)
+    calls = CallLog.query.filter(
+        CallLog.manager_id == current_user.id,
+        CallLog.call_date >= two_days_ago
+    ).order_by(CallLog.call_date.desc())\
+    .paginate(page=calls_page, per_page=10, error_out=False)
+        
+    return render_template("manager/field_visits.html", visits=visits, calls=calls)
 
 
 GEMINI_MANAGER_CACHES = {}
@@ -698,7 +710,7 @@ def ai_analyze():
     manager_id = current_user.id
     api_key = os.environ.get('GEMINI_API_KEY')
     client = genai.Client(api_key=api_key)
-    model_name = "gemini-3.5-flash-lite"  # Using your exact specified model
+    model_name = "gemini-3.1-flash-lite"  # Using your exact specified model
     
     # -------------------------------------------------------------
     # 1. Check for Active Gemini Cache (Subsequent Requests)
@@ -765,12 +777,21 @@ def ai_analyze():
     ).all()
     visit_data = [{"business": v.business.name, "date": str(v.visit_date), "issues": v.issue, "action": v.action_taken, "status": v.result} for v in visits]
 
+    # 4. Field Visits (30 Days - useful for spotting historical issues)
+    calls = CallLog.query.join(Business).filter(
+        Business.manager_id == manager_id,
+        CallLog.call_date >= three_days_ago
+    ).all()
+    call_data = [{"business": c.business.name, "date": str(c.call_date), "purposes": c.purpose, "response": c.customer_response, "status": c.result} for c in calls]
+
+
     # Assemble Context Data
     context_data = {
         "staff_team": staff_data,
         "daily_performance_7_days": daily_data,
         "weekly_performance_latest": weekly_data,
         "field_visits_30_days": visit_data,
+        "call_2days": call_data,
         "inactive_terminals_ntt_latest": ntt_data,
         "retention_review_latest": retention_data
     }

@@ -7,3 +7,4 @@ from .fetch_log import FetchLog
 from .activity import StaffActivityReport
 from .recovery import RecoveryTask
 from .visit import FieldVisit
+from .call_logs import CallLog

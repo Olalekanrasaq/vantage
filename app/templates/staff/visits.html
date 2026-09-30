@@ -1,114 +1,217 @@
 {% extends "base.html" %}
-{% block title %}Field Visits — Vantage{% endblock %}
+{% block title %}Interactions — Vantage{% endblock %}
 
 {% block content %}
 <div class="mb-5 flex items-center justify-between">
     <div>
-        <h1 class="text-xl font-bold text-brand-900">Field Visits</h1>
+        <h1 class="text-xl font-bold text-brand-900">Visits & Calls</h1>
         <p class="text-gray-500 text-sm mt-0.5">Log and track your merchant interactions</p>
     </div>
     <a href="{{ url_for('staff.dashboard') }}" class="text-xs text-brand-600 font-medium">← Dashboard</a>
 </div>
 
-<!-- Log Visit Form Card -->
-<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-6" x-data="{ open: false }">
-    <button @click="open = !open" class="w-full flex items-center justify-between font-semibold text-sm text-brand-900">
-        <span class="flex items-center gap-2">
-            <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Log a New Field Visit
-        </span>
-        <svg :class="open ? 'rotate-180' : ''" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-    </button>
-
-    <form method="POST" enctype="multipart/form-data" x-show="open" x-cloak class="space-y-4 pt-4 mt-4 border-t border-gray-50">
-        <div>
-            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Select Assigned Business</label>
-            <select name="business_id" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
-                <option value="">Choose business...</option>
-                {% for b in assigned_businesses %}
-                <option value="{{ b.id }}">{{ b.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Purpose</label>
-                <select name="purpose" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
-                    <option value="Terminal Recovery">Terminal Recovery</option>
-                    <option value="Maintenance / Support">Maintenance / Support</option>
-                    <option value="Relationship Check-in">Relationship Check-in</option>
-                    <option value="New Lead Conversion">New Lead Conversion</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Result Status</label>
-                <select name="result" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
-                    <option value="Resolved">Resolved</option>
-                    <option value="Pending Follow-up">Pending Follow-up</option>
-                    <option value="Escalated">Escalated</option>
-                </select>
-            </div>
-        </div>
-
-        <div>
-            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Issue Encountered</label>
-            <textarea name="issue" rows="2" placeholder="What problem was reported..." class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
-        </div>
-
-        <div>
-            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Action Taken</label>
-            <textarea name="action_taken" rows="2" placeholder="What did you do to fix or address it..." class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
-        </div>
-
-        <div>
-            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Visit Picture / Proof</label>
-            <input type="file" name="visit_image" accept="image/*" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none" />
-        </div>
-
-        <div>
-            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Next Follow-up Date (optional)</label>
-            <input type="date" name="next_follow_up" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-        </div>
-
-        <button type="submit" class="w-full bg-brand-900 text-white rounded-xl py-3 text-sm font-semibold hover:bg-brand-700 transition">
-            Save Field Visit Record
+<!-- Action Cards Container -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    
+    <!-- Log Visit Form Card -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 h-fit" x-data="{ open: false }">
+        <button @click="open = !open" class="w-full flex items-center justify-between font-semibold text-sm text-brand-900">
+            <span class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Log a Field Visit
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
-    </form>
+
+        <form method="POST" enctype="multipart/form-data" x-show="open" x-cloak class="space-y-4 pt-4 mt-4 border-t border-gray-50">
+            <input type="hidden" name="log_type" value="visit">
+            
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Select Assigned Business</label>
+                <select name="business_id" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <option value="">Choose business...</option>
+                    {% for b in assigned_businesses %}
+                    <option value="{{ b.id }}">{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Purpose</label>
+                    <select name="purpose" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                        <option value="Terminal Recovery">Terminal Recovery</option>
+                        <option value="Maintenance / Support">Maintenance / Support</option>
+                        <option value="Relationship Check-in">Relationship Check-in</option>
+                        <option value="New Lead Conversion">New Lead Conversion</option>
+                        <option value="Non-Transacting">Not Transacting</option>
+                        <option value="Target Not Met">Not meeting target</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Result Status</label>
+                    <select name="result" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                        <option value="Resolved">Resolved</option>
+                        <option value="Pending Follow-up">Pending Follow-up</option>
+                        <option value="Escalated">Escalated</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Issue Encountered</label>
+                <textarea name="issue" rows="2" placeholder="What problem was reported..." class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Action Taken</label>
+                <textarea name="action_taken" rows="2" placeholder="What did you do to fix or address it..." class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Visit Picture / Proof</label>
+                <input type="file" name="visit_image" accept="image/*" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none" />
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Next Follow-up Date (optional)</label>
+                <input type="date" name="next_follow_up" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+
+            <button type="submit" class="w-full bg-brand-900 text-white rounded-xl py-3 text-sm font-semibold hover:bg-brand-700 transition">
+                Save Field Visit Record
+            </button>
+        </form>
+    </div>
+
+    <!-- Log Call Form Card -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 h-fit" x-data="{ open: false }">
+        <button @click="open = !open" class="w-full flex items-center justify-between font-semibold text-sm text-brand-900">
+            <span class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                Log a Phone Call
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+
+        <form method="POST" x-show="open" x-cloak class="space-y-4 pt-4 mt-4 border-t border-gray-50">
+            <input type="hidden" name="log_type" value="call">
+            
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Select Assigned Business</label>
+                <select name="business_id" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <option value="">Choose business...</option>
+                    {% for b in assigned_businesses %}
+                    <option value="{{ b.id }}">{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Purpose of Call</label>
+                    <select name="purpose" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                        <option value="Terminal Recovery">Terminal Recovery</option>
+                        <option value="Issue Resolution">Issue Resolution</option>
+                        <option value="Follow-up">Follow-up</option>
+                        <option value="Target Not Met">Not Meeting Target</option>
+                        <option value="Non-Transacting">Not Transacting</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Call Result</label>
+                    <select name="result" required class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                        <option value="Answered - Positive">Answered - Positive</option>
+                        <option value="Answered - Negative">Answered - Negative</option>
+                        <option value="No Answer / Voicemail">No Answer / Voicemail</option>
+                        <option value="Number Unreachable">Number Unreachable</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Customer Response / Notes</label>
+                <textarea name="customer_response" rows="3" placeholder="What did the merchant say?" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+            </div>
+
+            <button type="submit" class="w-full bg-green-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-green-700 transition">
+                Save Call Record
+            </button>
+        </form>
+    </div>
 </div>
 
-<!-- History of Logged Visits -->
-<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-    <h2 class="text-sm font-semibold text-gray-700 mb-3">Your Visit History</h2>
-    <div class="space-y-3">
-        {% for visit in visits %}
-        <div class="border border-gray-100 rounded-xl p-3 bg-gray-50/50 space-y-2">
-            <div class="flex items-center justify-between">
-                <p class="text-sm font-semibold text-gray-800">{{ visit.business.name }}</p>
-                <span class="text-xs px-2 py-0.5 rounded-full font-medium
-                    {% if visit.result == 'Resolved' %}bg-green-100 text-green-700
-                    {% elif visit.result == 'Escalated' %}bg-red-100 text-red-700
-                    {% else %}bg-yellow-100 text-yellow-700{% endif %}">
-                    {{ visit.result }}
-                </span>
-            </div>
-            <p class="text-xs text-brand-700 font-medium">{{ visit.purpose }} · <span class="text-gray-400 font-normal">{{ visit.visit_date }}</span></p>
-            {% if visit.issue %}<p class="text-xs text-gray-600"><strong>Issue:</strong> {{ visit.issue }}</p>{% endif %}
-            {% if visit.action_taken %}<p class="text-xs text-gray-600"><strong>Action:</strong> {{ visit.action_taken }}</p>{% endif %}
-            
-            {% if visit.image_filename %}
-            <div class="mt-2">
-                <a href="{{ url_for('static', filename='uploads/visits/' + visit.image_filename) }}" target="_blank">
-                    <img src="{{ url_for('static', filename='uploads/visits/' + visit.image_filename) }}" alt="Visit Photo" class="w-20 h-20 object-cover rounded-lg border border-gray-200 hover:opacity-90 transition">
-                </a>
-            </div>
-            {% endif %}
+<!-- History Section with Tabs -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ tab: 'visits' }">
+    
+    <!-- Tabs Header -->
+    <div class="flex border-b border-gray-100 bg-gray-50/50">
+        <button @click="tab = 'visits'" :class="tab === 'visits' ? 'border-brand-600 text-brand-900 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'" class="flex-1 py-3 text-sm font-semibold border-b-2 transition">
+            Field Visits ({{ visits|length }})
+        </button>
+        <button @click="tab = 'calls'" :class="tab === 'calls' ? 'border-brand-600 text-brand-900 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'" class="flex-1 py-3 text-sm font-semibold border-b-2 transition">
+            Phone Calls ({{ calls|length }})
+        </button>
+    </div>
 
-            {% if visit.next_follow_up %}<p class="text-xs text-orange-600 font-medium">Follow-up expected: {{ visit.next_follow_up }}</p>{% endif %}
+    <div class="p-4">
+        <!-- Visits Tab -->
+        <div x-show="tab === 'visits'" class="space-y-3" x-cloak>
+            {% for visit in visits %}
+            <div class="border border-gray-100 rounded-xl p-3 bg-white hover:bg-gray-50 transition space-y-2">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm font-semibold text-gray-800">{{ visit.business.name }}</p>
+                    <span class="text-xs px-2 py-0.5 rounded-full font-medium
+                        {% if visit.result == 'Resolved' %}bg-green-100 text-green-700
+                        {% elif visit.result == 'Escalated' %}bg-red-100 text-red-700
+                        {% else %}bg-yellow-100 text-yellow-700{% endif %}">
+                        {{ visit.result }}
+                    </span>
+                </div>
+                <p class="text-xs text-brand-700 font-medium">{{ visit.purpose }} · <span class="text-gray-400 font-normal">{{ visit.visit_date }}</span></p>
+                {% if visit.issue %}<p class="text-xs text-gray-600"><strong>Issue:</strong> {{ visit.issue }}</p>{% endif %}
+                {% if visit.action_taken %}<p class="text-xs text-gray-600"><strong>Action:</strong> {{ visit.action_taken }}</p>{% endif %}
+                
+                {% if visit.image_filename %}
+                <div class="mt-2 pt-2 border-t border-gray-50">
+                    <a href="{{ url_for('static', filename='uploads/visits/' + visit.image_filename) }}" target="_blank" class="inline-flex items-center text-xs text-blue-600 font-medium hover:underline">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        View Proof Image
+                    </a>
+                </div>
+                {% endif %}
+
+                {% if visit.next_follow_up %}<p class="text-xs text-orange-600 font-medium">Follow-up expected: {{ visit.next_follow_up }}</p>{% endif %}
+            </div>
+            {% else %}
+            <p class="text-xs text-gray-400 text-center py-6">You have not logged any field visits yet.</p>
+            {% endfor %}
         </div>
-        {% else %}
-        <p class="text-xs text-gray-400 text-center py-6">You have not logged any field visits yet.</p>
-        {% endfor %}
+
+        <!-- Calls Tab -->
+        <div x-show="tab === 'calls'" class="space-y-3" x-cloak>
+            {% for call in calls %}
+            <div class="border border-gray-100 rounded-xl p-3 bg-white hover:bg-gray-50 transition space-y-2">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm font-semibold text-gray-800">{{ call.business.name }}</p>
+                    <span class="text-xs px-2 py-0.5 rounded-full font-medium
+                        {% if 'Positive' in call.result %}bg-green-100 text-green-700
+                        {% elif 'Negative' in call.result %}bg-red-100 text-red-700
+                        {% else %}bg-gray-100 text-gray-600{% endif %}">
+                        {{ call.result }}
+                    </span>
+                </div>
+                <p class="text-xs text-green-700 font-medium">{{ call.purpose }} · <span class="text-gray-400 font-normal">{{ call.call_date }}</span></p>
+                {% if call.customer_response %}
+                <div class="mt-2 bg-gray-50 p-2 rounded text-xs text-gray-600 border border-gray-100">
+                    <strong>Response:</strong> {{ call.customer_response }}
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <p class="text-xs text-gray-400 text-center py-6">You have not logged any calls yet.</p>
+            {% endfor %}
+        </div>
     </div>
 </div>
 {% endblock %}

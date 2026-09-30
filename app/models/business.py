@@ -28,6 +28,8 @@ class Business(db.Model):
                               cascade="all, delete-orphan")
     field_visits = db.relationship("FieldVisit", back_populates="business", 
                               cascade="all, delete-orphan")
+    call_logs = db.relationship("CallLog", back_populates="business", 
+                                cascade="all, delete-orphan")
 
     __table_args__ = (
         db.UniqueConstraint("manager_id", "name", name="uq_business_name_per_manager"),

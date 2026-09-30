@@ -170,8 +170,8 @@
               </span>
             </td>
             <td class="px-4 py-3 text-gray-500 space-y-1">
-              <div>Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></div>
-              <div>Days: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></div>
+              <div>Weekly Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></div>
+              <div>NTT Days: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></div>
               <div>Target: <strong class="{% if row.payment_value >= 100000 %}text-green-600{% else %}text-red-500{% endif %}">{{ 'Met' if row.payment_value >= 100000 else 'Not Met' }}</strong></div>
               <div class="text-brand-600 font-medium">Added: {{ row.first_seen_date.strftime('%b %d') if row.first_seen_date else '—' }}</div>
             </td>
@@ -272,8 +272,8 @@
 
       <!-- Stats row -->
       <div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 mb-3 bg-gray-50 p-2 rounded">
-        <span>Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></span>
-        <span>Days: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></span>
+        <span>Weekly Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></span>
+        <span>NTT Days: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></span>
         <span>Added: <strong class="text-brand-600">{{ row.first_seen_date.strftime('%b %d') if row.first_seen_date else '—' }}</strong></span>
         <span>Target:
           <strong class="{% if row.payment_value >= 100000 %}text-green-600{% else %}text-red-500{% endif %}">

@@ -1,21 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Team Field Visits — Vantage{% endblock %}
+{% block title %}Team Field Visits & Calls — Vantage{% endblock %}
 
 {% block content %}
 <div class="mb-5">
-    <h1 class="text-xl font-bold text-brand-900">Team Field Visits</h1>
-    <p class="text-gray-500 text-sm mt-0.5">Review field activities logged by your staff</p>
+    <h1 class="text-xl font-bold text-brand-900">Team Interactions</h1>
+    <p class="text-gray-500 text-sm mt-0.5">Review field visits and recent phone calls logged by your staff</p>
 </div>
 
-<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-    <!-- WRAPPER FOR AJAX SWAP -->
-    <div id="visits-table-content" class="transition-opacity duration-300">
-        
+<!-- Main Container with Tabs -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ tab: 'visits' }">
+    
+    <!-- Tabs Header -->
+    <div class="flex border-b border-gray-100 bg-gray-50/50">
+        <button @click="tab = 'visits'" :class="tab === 'visits' ? 'border-brand-600 text-brand-900 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'" class="flex-1 py-3 text-sm font-semibold border-b-2 transition">
+            Field Visits
+        </button>
+        <button @click="tab = 'calls'" :class="tab === 'calls' ? 'border-brand-600 text-brand-900 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'" class="flex-1 py-3 text-sm font-semibold border-b-2 transition">
+            Phone Calls (Last 48h)
+        </button>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 1: FIELD VISITS                        -->
+    <!-- ========================================== -->
+    <div id="visits-table-content" class="transition-opacity duration-300" x-show="tab === 'visits'">
         {% if visits.items %}
         
-        <!-- ========================================== -->
-        <!-- DESKTOP VIEW: STANDARD TABLE               -->
-        <!-- ========================================== -->
+        <!-- DESKTOP VIEW: VISITS -->
         <div class="hidden md:block table-scroll">
             <table class="w-full text-left text-xs">
                 <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide border-b border-gray-100">
@@ -63,13 +74,10 @@
             </table>
         </div>
 
-        <!-- ========================================== -->
-        <!-- MOBILE VIEW: CARDS                         -->
-        <!-- ========================================== -->
+        <!-- MOBILE VIEW: VISITS -->
         <div class="block md:hidden divide-y divide-gray-100">
             {% for visit in visits.items %}
             <div class="p-4 space-y-3 text-sm">
-                <!-- Header: Staff & Result -->
                 <div class="flex justify-between items-start">
                     <div>
                         <div class="font-semibold text-gray-800">{{ visit.staff.full_name }}</div>
@@ -83,13 +91,11 @@
                     </span>
                 </div>
                 
-                <!-- Body: Business & Purpose -->
                 <div class="bg-gray-50 rounded p-3">
                     <div class="font-medium text-gray-900 mb-1">{{ visit.business.name }}</div>
                     <div class="text-gray-600 text-xs">{{ visit.purpose }}</div>
                 </div>
 
-                <!-- Issue & Action (If present) -->
                 {% if visit.issue or visit.action_taken %}
                 <div class="text-xs text-gray-600 space-y-1">
                     {% if visit.issue %}<div><strong class="text-gray-700">Issue:</strong> {{ visit.issue }}</div>{% endif %}
@@ -97,7 +103,6 @@
                 </div>
                 {% endif %}
 
-                <!-- Photo (If present) -->
                 {% if visit.image_filename %}
                 <div class="pt-2 border-t border-gray-100">
                     <a href="{{ url_for('static', filename='uploads/visits/' + visit.image_filename) }}" target="_blank" class="flex items-center text-xs text-blue-600 font-medium hover:text-blue-800">
@@ -110,34 +115,126 @@
             {% endfor %}
         </div>
 
-        <!-- ========================================== -->
-        <!-- PAGINATION CONTROLS                        -->
-        <!-- ========================================== -->
+        <!-- PAGINATION: VISITS -->
         {% if visits.pages > 1 %}
         <div class="flex justify-between items-center px-4 py-4 bg-gray-50 border-t border-gray-100">
             <span class="text-xs text-gray-500">Page {{ visits.page }} of {{ visits.pages }}</span>
             <div class="flex space-x-2 text-sm">
                 {% if visits.has_prev %}
-                <a href="{{ url_for('manager.field_visits', page=visits.prev_num) }}" class="pagination-link px-3 py-1.5 bg-white border border-gray-200 rounded-md font-medium text-gray-700 hover:bg-gray-100" data-target="visits-table-content">
+                <a href="{{ url_for('manager.field_visits', page=visits.prev_num, calls_page=request.args.get('calls_page', 1)) }}" class="pagination-link px-3 py-1.5 bg-white border border-gray-200 rounded-md font-medium text-gray-700 hover:bg-gray-100" data-target="visits-table-content">
                     Previous
                 </a>
                 {% endif %}
                 {% if visits.has_next %}
-                <a href="{{ url_for('manager.field_visits', page=visits.next_num) }}" class="pagination-link px-3 py-1.5 bg-white border border-gray-200 rounded-md font-medium text-gray-700 hover:bg-gray-100" data-target="visits-table-content">
+                <a href="{{ url_for('manager.field_visits', page=visits.next_num, calls_page=request.args.get('calls_page', 1)) }}" class="pagination-link px-3 py-1.5 bg-white border border-gray-200 rounded-md font-medium text-gray-700 hover:bg-gray-100" data-target="visits-table-content">
                     Next
                 </a>
                 {% endif %}
             </div>
         </div>
         {% endif %}
-
         {% else %}
-        <!-- Empty State -->
         <div class="px-4 py-12 text-center">
             <p class="text-gray-400 text-sm">No field visits recorded by your team yet.</p>
         </div>
         {% endif %}
+    </div>
 
+    <!-- ========================================== -->
+    <!-- TAB 2: CALL LOGS                           -->
+    <!-- ========================================== -->
+    <div id="calls-table-content" class="transition-opacity duration-300" x-show="tab === 'calls'" x-cloak>
+        {% if calls.items %}
+        
+        <!-- DESKTOP VIEW: CALLS -->
+        <div class="hidden md:block table-scroll">
+            <table class="w-full text-left text-xs">
+                <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                    <tr>
+                        <th class="px-4 py-3">Date</th>
+                        <th class="px-4 py-3">Staff</th>
+                        <th class="px-4 py-3">Business</th>
+                        <th class="px-4 py-3">Purpose</th>
+                        <th class="px-4 py-3">Customer Response</th>
+                        <th class="px-4 py-3 text-center">Result</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    {% for call in calls.items %}
+                    <tr class="hover:bg-gray-50/50">
+                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap">{{ call.call_date }}</td>
+                        <td class="px-4 py-3 font-semibold text-gray-800">{{ call.staff.full_name }}</td>
+                        <td class="px-4 py-3 font-medium text-gray-700">{{ call.business.name }}</td>
+                        <td class="px-4 py-3 text-gray-600">{{ call.purpose }}</td>
+                        <td class="px-4 py-3 text-gray-600 max-w-sm">{{ call.customer_response or '—' }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="px-2 py-0.5 rounded-full font-medium whitespace-nowrap
+                                {% if 'Positive' in call.result %}bg-green-100 text-green-700
+                                {% elif 'Negative' in call.result %}bg-red-100 text-red-700
+                                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                                {{ call.result }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- MOBILE VIEW: CALLS -->
+        <div class="block md:hidden divide-y divide-gray-100">
+            {% for call in calls.items %}
+            <div class="p-4 space-y-3 text-sm">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="font-semibold text-gray-800">{{ call.staff.full_name }}</div>
+                        <div class="text-xs text-gray-500">{{ call.call_date }}</div>
+                    </div>
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap
+                        {% if 'Positive' in call.result %}bg-green-100 text-green-700
+                        {% elif 'Negative' in call.result %}bg-red-100 text-red-700
+                        {% else %}bg-gray-100 text-gray-600{% endif %}">
+                        {{ call.result }}
+                    </span>
+                </div>
+                
+                <div class="bg-gray-50 rounded p-3">
+                    <div class="font-medium text-gray-900 mb-1">{{ call.business.name }}</div>
+                    <div class="text-gray-600 text-xs">{{ call.purpose }}</div>
+                </div>
+
+                {% if call.customer_response %}
+                <div class="text-xs text-gray-600 space-y-1">
+                    <div><strong class="text-gray-700">Response Notes:</strong> {{ call.customer_response }}</div>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- PAGINATION: CALLS -->
+        {% if calls.pages > 1 %}
+        <div class="flex justify-between items-center px-4 py-4 bg-gray-50 border-t border-gray-100">
+            <span class="text-xs text-gray-500">Page {{ calls.page }} of {{ calls.pages }}</span>
+            <div class="flex space-x-2 text-sm">
+                {% if calls.has_prev %}
+                <a href="{{ url_for('manager.field_visits', calls_page=calls.prev_num, page=request.args.get('page', 1)) }}" class="pagination-link px-3 py-1.5 bg-white border border-gray-200 rounded-md font-medium text-gray-700 hover:bg-gray-100" data-target="calls-table-content">
+                    Previous
+                </a>
+                {% endif %}
+                {% if calls.has_next %}
+                <a href="{{ url_for('manager.field_visits', calls_page=calls.next_num, page=request.args.get('page', 1)) }}" class="pagination-link px-3 py-1.5 bg-white border border-gray-200 rounded-md font-medium text-gray-700 hover:bg-gray-100" data-target="calls-table-content">
+                    Next
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="px-4 py-12 text-center">
+            <p class="text-gray-400 text-sm">No phone calls logged by your team in the past 48 hours.</p>
+        </div>
+        {% endif %}
     </div>
 </div>
 
