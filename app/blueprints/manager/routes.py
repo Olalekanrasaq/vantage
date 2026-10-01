@@ -2,6 +2,7 @@ import os
 import json
 from google import genai
 from google.genai import types
+from decouple import config
 
 from datetime import date, timedelta, datetime, timezone
 from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify
@@ -18,9 +19,6 @@ from app.models import (
     StaffActivityReport, RecoveryTask, FieldVisit, CallLog
 )
 from app.services.extraction_service import run_extraction
-from dotenv import load_dotenv
-
-load_dotenv()
 
 daily_target = 14286
 weekly_target = 100000
@@ -708,7 +706,7 @@ def ai_analyze():
         return jsonify({"error": "Prompt is required"}), 400
 
     manager_id = current_user.id
-    api_key = os.environ.get('GEMINI_API_KEY')
+    api_key = config('GEMINI_API_KEY')
     client = genai.Client(api_key=api_key)
     model_name = "gemini-3.1-flash-lite"  # Using your exact specified model
     

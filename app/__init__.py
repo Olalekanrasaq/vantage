@@ -4,6 +4,7 @@ from flask import Flask
 from config import config
 from app.extensions import db, login_manager, migrate, scheduler
 from app.models import SuperAdmin, BusinessManager, Staff
+from decouple import config
 
 
 def create_app(config_name=None):
