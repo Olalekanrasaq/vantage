@@ -4,7 +4,7 @@ from flask import Flask
 from config import config
 from app.extensions import db, login_manager, migrate, scheduler
 from app.models import SuperAdmin, BusinessManager, Staff
-from decouple import config
+from app.services.reminder_service import send_grace_reminders, send_missing_report_alerts
 
 
 def create_app(config_name=None):
@@ -59,6 +59,14 @@ def create_app(config_name=None):
     with app.app_context():
         _seed_super_admin(app)
 
+    if not scheduler.running and (not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true"):
+        scheduler.add_job(send_grace_reminders, "cron", hour=8, minute=0,
+                          timezone="Africa/Lagos", args=[app],
+                          id="grace_reminders", replace_existing=True)
+        scheduler.add_job(send_missing_report_alerts, "cron", hour=17, minute=0,
+                          timezone="Africa/Lagos", args=[app],
+                          id="missing_report_alerts", replace_existing=True)
+        scheduler.start()
     return app
 
 

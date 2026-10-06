@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 from flask import render_template, abort, redirect, url_for, flash, request, current_app, Response
-from flask_login import login_required, current_user
+from flask_login import login_required, current_user, logout_user
 from functools import wraps
 
 from app.blueprints.staff import staff_bp
@@ -11,7 +11,6 @@ from app.blueprints.manager.routes import _get_dashboard_metrics, _get_dashboard
 import os
 from werkzeug.utils import secure_filename
 
-
 def staff_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -19,6 +18,10 @@ def staff_required(f):
             abort(403)
         if not current_user.is_active:
             abort(403)
+        if not current_user.manager.has_access:
+            logout_user()
+            flash("Your manager has not subscribed. Please contact your manager.", "error")
+            return redirect(url_for("auth.staff_login"))
         return f(*args, **kwargs)
     return decorated
 

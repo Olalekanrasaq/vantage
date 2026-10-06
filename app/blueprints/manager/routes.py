@@ -5,8 +5,8 @@ from google.genai import types
 from decouple import config
 
 from datetime import date, timedelta, datetime, timezone
-from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify
-from flask_login import login_required, current_user
+from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify, session
+from flask_login import login_required, current_user, logout_user
 from flask import abort
 from functools import wraps
 from sqlalchemy import func, distinct
@@ -18,7 +18,7 @@ from app.models import (
     DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog,
     StaffActivityReport, RecoveryTask, FieldVisit, CallLog
 )
-from app.services.extraction_service import run_extraction
+from app.services.extraction_service import run_extraction, ExtractionError
 
 daily_target = 14286
 weekly_target = 100000
@@ -26,12 +26,14 @@ weekly_target = 100000
 def manager_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not current_user.is_authenticated:
+        if not current_user.is_authenticated or not isinstance(current_user, BusinessManager):
             abort(403)
-        if not isinstance(current_user, BusinessManager):
-            abort(403)
-        if not current_user.is_active:
-            return redirect(url_for("payment.subscribe"))
+        if not current_user.has_access:
+            manager_id = current_user.id
+            logout_user()
+            session["pending_manager_id"] = manager_id
+            flash("Your subscription has expired. Please renew to continue.", "error")
+            return redirect(url_for("payment.checkout"))
         return f(*args, **kwargs)
     return decorated
 
@@ -629,8 +631,11 @@ def upload():
                 f"ntt: {counts['ntt']}, retention: {counts['retention']} records.",
                 "success"
             )
-        except Exception as e:
-            flash(f"Extraction failed: {str(e)}", "error")
+        except ExtractionError:
+            flash("Extraction of data failed. Check the report you uploaded and try again.", "error")
+        except Exception:
+            current_app.logger.exception("Unexpected error during report upload")
+            flash("Something went wrong while processing your report. Please try again.", "error")
 
     return render_template("manager/upload.html")
 

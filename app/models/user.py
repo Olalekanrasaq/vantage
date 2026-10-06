@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.extensions import db
+from flask import current_app
 
 
 class SuperAdmin(UserMixin, db.Model):
@@ -50,6 +51,7 @@ class BusinessManager(UserMixin, db.Model):
     # Account status
     is_active = db.Column(db.Boolean, default=False)  # True after payment
     subscription_expiry = db.Column(db.DateTime, nullable=True)
+    last_reminder_on = db.Column(db.Date, nullable=True)
 
     # Scheduler flag — reset daily
     # report_fetched_today = db.Column(db.Boolean, default=False)
@@ -87,15 +89,43 @@ class BusinessManager(UserMixin, db.Model):
     def role(self):
         return "manager"
 
+    def _expiry_utc(self):
+        e = self.subscription_expiry
+        if e is None:
+            return None
+        return e.replace(tzinfo=timezone.utc) if e.tzinfo is None else e.astimezone(timezone.utc)
+
     @property
-    def subscription_is_active(self):
-        if not self.is_active:
-            return False
-        if self.subscription_expiry is None:
-            return False
-        expiry = self.subscription_expiry
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) <= expiry
+    def grace_ends_at(self):
+        e = self._expiry_utc()
+        return e + timedelta(days=current_app.config["GRACE_DAYS"]) if e else None
+
+    @property
+    def subscription_status(self):
+        """'unpaid' | 'active' | 'grace' | 'expired'"""
+        e = self._expiry_utc()
+        if not self.is_active or e is None:
+            return "unpaid"
+        now = datetime.now(timezone.utc)
+        if now <= e:
+            return "active"
+        if now <= self.grace_ends_at:
+            return "grace"
+        return "expired"
+
+    @property
+    def has_access(self):
+        return self.subscription_status in ("active", "grace")
+
+    @property
+    def subscription_is_active(self):  # still used by admin template
+        return self.subscription_status == "active"
+
+    @property
+    def grace_days_left(self):
+        if self.subscription_status != "grace":
+            return 0
+        return max(0, (self.grace_ends_at - datetime.now(timezone.utc)).days + 1)
+    
     def __repr__(self):
         return f"<BusinessManager {self.email}>"

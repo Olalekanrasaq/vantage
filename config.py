@@ -16,10 +16,19 @@ class Config:
     MONNIFY_CONTRACT_CODE = config("MONNIFY_CONTRACT_CODE")
     MONNIFY_BASE_URL = config("MONNIFY_BASE_URL")
 
-    # ── Mailgun ───────────────────────────────────────────────────────────────
-    MAILGUN_API_KEY = config("MAILGUN_API_KEY")
-    MAILGUN_DOMAIN = config("MAILGUN_DOMAIN")
-    MAIL_FROM = config("MAIL_FROM", "noreply@vantage.com")
+     # ── Billing ───────────────────────────────────────────────────────────────
+    SUBSCRIPTION_AMOUNT = config("SUBSCRIPTION_AMOUNT", default=5000, cast=int)
+    # SUBSCRIPTION_DAYS = config("SUBSCRIPTION_DAYS", default=30, cast=int)
+    SUBSCRIPTION_MONTHS = config("SUBSCRIPTION_MONTHS", default=1, cast=int)
+    APP_URL = config("APP_URL")  # e.g. https://vantage.example.com, no trailing slash
+    GRACE_DAYS = 5
+
+    # ── Mail (Gmail SMTP) ─────────────────────────────────────────────────────
+    MAIL_SERVER = config("MAIL_SERVER", default="smtp.gmail.com")
+    MAIL_PORT = config("MAIL_PORT", default=587, cast=int)
+    MAIL_USERNAME = config("MAIL_USERNAME")
+    MAIL_PASSWORD = config("MAIL_PASSWORD")
+    MAIL_FROM = config("MAIL_FROM", default=config("MAIL_USERNAME"))
 
     # ── Super Admin ───────────────────────────────────────────────────────────
     SUPER_ADMIN_EMAIL = config("SUPER_ADMIN_EMAIL")

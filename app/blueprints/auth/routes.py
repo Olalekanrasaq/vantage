@@ -32,9 +32,9 @@ def user_signup():
             db.session.add(new_user)
             db.session.commit()
             
-            login_user(new_user)
-            flash("Account created successfully!", "success")
-            return redirect(url_for("manager.dashboard"))
+            session["pending_manager_id"] = new_user.id
+            flash("Account created. Complete payment to activate it.", "success")
+            return redirect(url_for("payment.checkout"))
         else:
             flash("Email and password are required.", "error")
 
@@ -50,10 +50,21 @@ def user_login():
         user = BusinessManager.query.filter_by(email=email).first()
         
         if user and user.check_password(password):
+            if not user.has_access:
+                session["pending_manager_id"] = user.id
+                if user.subscription_status == "unpaid":
+                    flash("Complete your payment to activate your account.", "info")
+                else:
+                    flash("Your subscription has expired. Renew to continue.", "error")
+                return redirect(url_for("payment.checkout"))
+
+            session.pop("pending_manager_id", None)
             login_user(user)
+            if user.subscription_status == "grace":
+                flash(f"Your subscription is overdue. Renew within {user.grace_days_left} day(s) to keep access.", "warning")
             return redirect(url_for("manager.dashboard"))
-        else:
-            flash("Invalid email or password.", "error")
+
+        flash("Invalid email or password.", "error")
 
     return render_template("user/login.html")
 
@@ -71,6 +82,9 @@ def staff_login():
         staff = Staff.query.filter_by(username=username, is_active=True).first()
 
         if staff and staff.check_password(password):
+            if not staff.manager.has_access:
+                flash("Your manager has not subscribed. Please contact your manager.", "error")
+                return render_template("auth/staff_login.html")
             login_user(staff)
             return redirect(url_for("staff.dashboard"))
 

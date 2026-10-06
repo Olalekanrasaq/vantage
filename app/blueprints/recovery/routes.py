@@ -4,18 +4,9 @@ from flask_login import login_required, current_user
 from flask import abort
 
 from app.blueprints.recovery import recovery_bp
+from app.blueprints.manager.routes import manager_required
 from app.extensions import db
-from app.models import NTTReport, RetentionReport, RecoveryTask, Staff, Business
-
-
-def manager_required(f):
-    from functools import wraps
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not current_user.is_authenticated:
-            abort(403)
-        return f(*args, **kwargs)
-    return decorated
+from app.models import NTTReport, RetentionReport, RecoveryTask, Staff, Business, BusinessManager
 
 
 @recovery_bp.route("/center")

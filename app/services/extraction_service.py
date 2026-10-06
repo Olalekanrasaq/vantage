@@ -6,6 +6,13 @@ Adapts your four extraction functions to:
   - Persist results into the four report tables
   - Link extracted business names to the Business table
   - Log results in FetchLog
+
+Behaviour:
+  - A report only counts if the required sections (REQUIRED) contain records
+    and no section raises. Otherwise nothing is saved, the failure is logged,
+    the super admin is emailed, and ExtractionError is raised.
+  - A successful upload REPLACES every row for that manager and report date,
+    so re-uploading a corrected report leaves only the latest data.
 """
 
 import io
@@ -15,6 +22,17 @@ import pandas as pd
 
 from app.extensions import db
 from app.models import Business, DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog
+from flask import current_app
+from app.services.mail_service import send_extraction_failure_alert
+
+
+class ExtractionError(Exception):
+    """Raised when a report cannot be processed. Nothing is saved when this happens."""
+
+
+# Sections that must contain records for an upload to count as valid.
+# ntt and retention may legitimately be empty on a good day.
+REQUIRED = ("daily", "weekly")
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -22,50 +40,60 @@ from app.models import Business, DailyReport, WeeklyReport, NTTReport, Retention
 def run_extraction(manager, pdf_bytes: bytes, report_date: date, source: str = "gmail"):
     """
     Called by the scheduler and the manual upload route.
-    Runs all four extractions and persists results.
+    Extracts all four sections, validates them, then replaces that report
+    date's rows in one transaction. Raises ExtractionError on failure.
     """
-    counts = {"daily": 0, "weekly": 0, "ntt": 0, "retention": 0}
-    errors = []
+    extractors = {
+        "daily": extract_daily_report,
+        "weekly": extract_business_report,
+        "ntt": extract_ntt_report,
+        "retention": extract_retention_report,
+    }
 
+    # 1. Extract everything first. Nothing touches the database yet.
+    frames, problems = {}, []
+    for name, fn in extractors.items():
+        try:
+            frames[name] = fn(pdf_bytes)
+        except Exception as e:
+            frames[name] = pd.DataFrame()
+            problems.append(f"{name}: {e}")
+
+    # 2. Validate. Existing data for this date is untouched if this fails.
+    problems += [f"{n}: no records found" for n in REQUIRED if frames[n].empty]
+    if problems:
+        _fail(manager, report_date, "; ".join(problems))  # raises
+
+    # 3. Replace this date's rows atomically.
     try:
-        daily_df = extract_daily_report(pdf_bytes)
-        counts["daily"] = _save_daily(manager, daily_df, report_date, source)
+        counts = {
+            "daily": _replace(DailyReport, manager, report_date,
+                              _daily_rows(manager, frames["daily"], source)),
+            "weekly": _replace(WeeklyReport, manager, report_date,
+                               _weekly_rows(manager, frames["weekly"], source)),
+            "ntt": _replace(NTTReport, manager, report_date,
+                            _ntt_rows(manager, frames["ntt"], source)),
+            "retention": _replace(RetentionReport, manager, report_date,
+                                  _retention_rows(manager, frames["retention"], source)),
+        }
+        db.session.commit()
     except Exception as e:
-        errors.append(f"daily: {e}")
+        db.session.rollback()
+        _fail(manager, report_date, f"save: {e}")  # raises
 
-    try:
-        weekly_df = extract_business_report(pdf_bytes)
-        counts["weekly"] = _save_weekly(manager, weekly_df, report_date, source)
-    except Exception as e:
-        errors.append(f"weekly: {e}")
-
-    try:
-        ntt_df = extract_ntt_report(pdf_bytes)
-        counts["ntt"] = _save_ntt(manager, ntt_df, report_date, source)
-    except Exception as e:
-        errors.append(f"ntt: {e}")
-
-    try:
-        retention_df = extract_retention_report(pdf_bytes)
-        counts["retention"] = _save_retention(manager, retention_df, report_date, source)
-    except Exception as e:
-        errors.append(f"retention: {e}")
-
-    total = sum(counts.values())
-    message = (
-        f"daily={counts['daily']}, weekly={counts['weekly']}, "
-        f"ntt={counts['ntt']}, retention={counts['retention']}"
-    )
-    if errors:
-        message += f" | errors: {'; '.join(errors)}"
-
-    status = "extraction_error" if not total and errors else "success"
-    _log(manager.id, report_date, status, message, total)
-
-    if errors and not total:
-        raise RuntimeError("; ".join(errors))
-
+    message = ", ".join(f"{k}={v}" for k, v in counts.items())
+    _log(manager.id, report_date, "success", message, sum(counts.values()))
     return counts
+
+
+def _fail(manager, report_date, message):
+    """Log the failure, alert the super admin only, then raise ExtractionError."""
+    _log(manager.id, report_date, "extraction_error", message, 0)
+    try:
+        send_extraction_failure_alert(manager, report_date, message)
+    except Exception as e:
+        current_app.logger.warning("Extraction alert email failed: %s", e)
+    raise ExtractionError(message)
 
 
 # ── Extraction functions (adapted from your original code) ────────────────────
@@ -76,7 +104,7 @@ def _open_pdf(pdf_bytes: bytes):
 
 
 def extract_daily_report(pdf_bytes: bytes) -> pd.DataFrame:
-    """Extract Daily Terminal Transactions — no terminal_id."""
+    """Extract Daily Terminal Transactions - no terminal_id."""
     doc = _open_pdf(pdf_bytes)
     text = ""
     for page in doc[3:]:
@@ -100,7 +128,7 @@ def extract_daily_report(pdf_bytes: bytes) -> pd.DataFrame:
     bos = []
     i = 0
 
-    while i < len(data_list):
+    while i+5 < len(data_list):
         if "Page" in data_list[i]:
             i += 16
             continue
@@ -140,7 +168,7 @@ def extract_business_report(pdf_bytes: bytes) -> pd.DataFrame:
     """Extract Weekly Terminal Transactions."""
     doc = _open_pdf(pdf_bytes)
     text = ""
-    for page in doc[35:]:
+    for page in doc[15:]:
         text += page.get_text("text") + "\n"
 
     lines = text.split("\n")
@@ -164,7 +192,7 @@ def extract_business_report(pdf_bytes: bytes) -> pd.DataFrame:
     bos = []
     i = 0
 
-    while i < len(data_list):
+    while i+5 < len(data_list):
         if "Page" in data_list[i]:
             i += 16
             continue
@@ -203,7 +231,7 @@ def extract_ntt_report(pdf_bytes: bytes) -> pd.DataFrame:
     """Extract Non-Transacting Terminals."""
     doc = _open_pdf(pdf_bytes)
     text = ""
-    for page in doc[75:]:
+    for page in doc[35:]:
         text += page.get_text("text") + "\n"
 
     lines = text.split("\n")
@@ -219,7 +247,7 @@ def extract_ntt_report(pdf_bytes: bytes) -> pd.DataFrame:
     bos = []
     i = 0
 
-    while i < len(data_list):
+    while i+3 < len(data_list):
         if "Page" in data_list[i]:
             i += 12
             continue
@@ -272,7 +300,7 @@ def extract_retention_report(pdf_bytes: bytes) -> pd.DataFrame:
     bos = []
     i = 0
 
-    while i < len(data_list):
+    while i+10 < len(data_list):
         if "Note" in data_list[i]:
             i += 57
             continue
@@ -319,156 +347,91 @@ def _get_or_create_business(manager_id, name):
     return business.id
 
 
-def _save_daily(manager, df: pd.DataFrame, report_date: date, source: str) -> int:
-    if df.empty:
-        return 0
-    count = 0
+def _replace(model, manager, report_date, rows: dict) -> int:
+    """
+    Delete this manager's rows for the report date, then insert the new ones.
+    The caller commits, so all four tables are replaced in one transaction.
+    """
+    model.query.filter_by(manager_id=manager.id, report_date=report_date).delete(
+        synchronize_session=False
+    )
+    for kwargs in rows.values():
+        db.session.add(model(manager_id=manager.id, report_date=report_date, **kwargs))
+    return len(rows)
+
+
+# Row builders. Dicts are keyed on the same columns as each table's unique
+# constraint, so duplicate rows inside one PDF collapse to the last one.
+
+def _daily_rows(manager, df: pd.DataFrame, source: str) -> dict:
+    rows = {}
     for _, row in df.iterrows():
         name = str(row.get("business_name", "")).strip()
         if not name:
             continue
-        business_id = _get_or_create_business(manager.id, name)
-        existing = DailyReport.query.filter_by(
-            manager_id=manager.id,
+        serial = str(row.get("terminal_serial", ""))
+        rows[(name, serial)] = dict(
+            business_id=_get_or_create_business(manager.id, name),
+            source=source,
             business_name=name,
-            terminal_serial=str(row.get("terminal_serial", "")),
-            report_date=report_date,
-        ).first()
-        if existing:
-            existing.target_met = str(row.get("target_met", ""))
-            existing.payment_value = float(row.get("payment_value", 0))
-            existing.payment_vol = int(row.get("payment_vol", 0))
-            existing.days_last_transact = str(row.get("days_last_transact", ""))
-            existing.source = source
-        else:
-            record = DailyReport(
-                manager_id=manager.id,
-                business_id=business_id,
-                report_date=report_date,
-                source=source,
-                business_name=name,
-                terminal_serial=str(row.get("terminal_serial", "")),
-                target_met=str(row.get("target_met", "")),
-                payment_value=float(row.get("payment_value", 0)),
-                payment_vol=int(row.get("payment_vol", 0)),
-                days_last_transact=str(row.get("days_last_transact", "")),
-            )
-            db.session.add(record)
-            count += 1
-    db.session.commit()
-    return count
+            terminal_serial=serial,
+            target_met=str(row.get("target_met", "")),
+            payment_value=float(row.get("payment_value", 0)),
+            payment_vol=int(row.get("payment_vol", 0)),
+            days_last_transact=str(row.get("days_last_transact", "")),
+        )
+    return rows
 
 
-def _save_weekly(manager, df: pd.DataFrame, report_date: date, source: str) -> int:
-    if df.empty:
-        return 0
-    count = 0
+def _weekly_rows(manager, df: pd.DataFrame, source: str) -> dict:
+    rows = {}
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
-        business_id = _get_or_create_business(manager.id, name)
-        existing = WeeklyReport.query.filter_by(
-            manager_id=manager.id,
+        rows[name] = dict(
+            business_id=_get_or_create_business(manager.id, name),
+            source=source,
             business_name=name,
-            report_date=report_date,
-        ).first()
-        if existing:
-            existing.target_met = str(row.get("target_met", ""))
-            existing.payment_value = float(row.get("payment_value", 0))
-            existing.payment_vol = int(row.get("payment_vol", 0))
-            existing.days_last_transact = str(row.get("days_last_transact", ""))
-            existing.source = source
-        else:
-            record = WeeklyReport(
-                manager_id=manager.id,
-                business_id=business_id,
-                report_date=report_date,
-                source=source,
-                business_name=name,
-                target_met=str(row.get("target_met", "")),
-                payment_value=float(row.get("payment_value", 0)),
-                payment_vol=int(row.get("payment_vol", 0)),
-                days_last_transact=str(row.get("days_last_transact", "")),
-            )
-            db.session.add(record)
-            count += 1
-    db.session.commit()
-    return count
+            target_met=str(row.get("target_met", "")),
+            payment_value=float(row.get("payment_value", 0)),
+            payment_vol=int(row.get("payment_vol", 0)),
+            days_last_transact=str(row.get("days_last_transact", "")),
+        )
+    return rows
 
 
-def _save_ntt(manager, df: pd.DataFrame, report_date: date, source: str) -> int:
-    if df.empty:
-        return 0
-    count = 0
+def _ntt_rows(manager, df: pd.DataFrame, source: str) -> dict:
+    rows = {}
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
-        business_id = _get_or_create_business(manager.id, name)
-        existing = NTTReport.query.filter_by(
-            manager_id=manager.id,
+        rows[name] = dict(
+            business_id=_get_or_create_business(manager.id, name),
+            source=source,
             business_name=name,
-            report_date=report_date,
-        ).first()
-        
-        # Grab terminal serial from dataframe (adjust key if your extract_ntt_report dataframe uses lowercase or different casing)
-        t_serial = str(row.get("terminal_serial", row.get("Terminal Serial", ""))).strip()
-
-        if existing:
-            existing.terminal_serial = t_serial
-            existing.days_last_transact = str(row.get("days_last_transact", ""))
-            existing.source = source
-        else:
-            record = NTTReport(
-                manager_id=manager.id,
-                business_id=business_id,
-                report_date=report_date,
-                source=source,
-                business_name=name,
-                terminal_serial=t_serial,
-                days_last_transact=str(row.get("days_last_transact", "")),
-            )
-            db.session.add(record)
-            count += 1
-    db.session.commit()
-    return count
+            terminal_serial=str(row.get("terminal_serial", row.get("Terminal Serial", ""))).strip(),
+            days_last_transact=str(row.get("days_last_transact", "")),
+        )
+    return rows
 
 
-def _save_retention(manager, df: pd.DataFrame, report_date: date, source: str) -> int:
-    if df.empty:
-        return 0
-    count = 0
+def _retention_rows(manager, df: pd.DataFrame, source: str) -> dict:
+    rows = {}
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
-        business_id = _get_or_create_business(manager.id, name)
-        existing = RetentionReport.query.filter_by(
-            manager_id=manager.id,
+        rows[name] = dict(
+            business_id=_get_or_create_business(manager.id, name),
+            source=source,
             business_name=name,
-            report_date=report_date,
-        ).first()
-        if existing:
-            existing.min_volume = str(row.get("min_volume", ""))
-            existing.vol_meet = str(row.get("vol_meet", ""))
-            existing.days_decline = str(row.get("days_decline", ""))
-            existing.source = source
-        else:
-            record = RetentionReport(
-                manager_id=manager.id,
-                business_id=business_id,
-                report_date=report_date,
-                source=source,
-                business_name=name,
-                min_volume=str(row.get("min_volume", "")),
-                vol_meet=str(row.get("vol_meet", "")),
-                days_decline=str(row.get("days_decline", "")),
-            )
-            db.session.add(record)
-            count += 1
-    db.session.commit()
-    return count
+            min_volume=str(row.get("min_volume", "")),
+            vol_meet=str(row.get("vol_meet", "")),
+            days_decline=str(row.get("days_decline", "")),
+        )
+    return rows
 
 
 # ── Fetch log ─────────────────────────────────────────────────────────────────

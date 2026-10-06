@@ -42,7 +42,7 @@
                 <span class="text-xs px-2.5 py-1 rounded-full font-medium
                     {% if manager.subscription_is_active %}bg-green-100 text-green-700
                     {% else %}bg-gray-100 text-gray-500{% endif %}">
-                    {{ 'Active' if manager.subscription_is_active else 'Inactive' }}
+                    {{ 'Active' if manager.has_access else 'Inactive' }}
                 </span>
             </div>
             <p class="text-xs text-gray-400 mt-1">
