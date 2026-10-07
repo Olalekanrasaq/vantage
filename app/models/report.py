@@ -27,6 +27,7 @@ class DailyReport(db.Model):
     __table_args__ = (
         db.UniqueConstraint("manager_id", "business_name", "terminal_serial", "report_date",
                             name="uq_daily_report"),
+        db.Index("ix_daily_manager_date", "manager_id", "report_date"),
     )
 
     def __repr__(self):
@@ -54,6 +55,7 @@ class WeeklyReport(db.Model):
     __table_args__ = (
         db.UniqueConstraint("manager_id", "business_name", "report_date",
                             name="uq_weekly_report"),
+        db.Index("ix_weekly_manager_date", "manager_id", "report_date"),
     )
 
     def __repr__(self):
@@ -79,6 +81,7 @@ class NTTReport(db.Model):
     __table_args__ = (
         db.UniqueConstraint("manager_id", "business_name", "report_date",
                             name="uq_ntt_report"),
+        db.Index("ix_ntt_manager_date", "manager_id", "report_date"),
     )
 
     def __repr__(self):
@@ -105,6 +108,7 @@ class RetentionReport(db.Model):
     __table_args__ = (
         db.UniqueConstraint("manager_id", "business_name", "report_date",
                             name="uq_retention_report"),
+        db.Index("ix_retention_manager_date", "manager_id", "report_date"),
     )
 
     def __repr__(self):

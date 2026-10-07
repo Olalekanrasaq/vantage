@@ -11,7 +11,7 @@ class Staff(UserMixin, db.Model):
     manager_id = db.Column(db.Integer, db.ForeignKey("business_managers.id"),
                            nullable=False)
 
-    username = db.Column(db.String(100), nullable=False)
+    username = db.Column(db.String(100), nullable=False, index=True)
     full_name = db.Column(db.String(255), nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)
     phone = db.Column(db.String(20), nullable=True)

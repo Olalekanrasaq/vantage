@@ -11,7 +11,7 @@ class Payment(db.Model):
 
     # Monnify transaction reference
     transaction_reference = db.Column(db.String(255), unique=True, nullable=False)
-    payment_reference = db.Column(db.String(255), nullable=True)  # Monnify's own ref
+    payment_reference = db.Column(db.String(255), nullable=True, index=True)  # Monnify's own ref
 
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     currency = db.Column(db.String(10), default="NGN")

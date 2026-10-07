@@ -19,6 +19,11 @@ class FieldVisit(db.Model):
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    __table_args__ = (
+        db.Index("ix_visit_manager_date", "manager_id", "visit_date"),
+        db.Index("ix_visit_staff_date", "staff_id", "visit_date"),
+    )
+
     manager = db.relationship("BusinessManager", back_populates="field_visits")
     staff = db.relationship("Staff", back_populates="field_visits")
     business = db.relationship("Business", back_populates="field_visits")

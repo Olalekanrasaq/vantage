@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Confirm Assignment | Vantage{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto mt-4">
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+    <h1 class="text-lg font-bold text-brand-900">Some businesses are already assigned</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      You selected <strong>{{ total }}</strong> businesses:
+      <strong>{{ already }}</strong> already assigned, <strong>{{ unassigned }}</strong> unassigned.
+    </p>
+
+    <ul class="mt-4 divide-y divide-gray-50 border border-gray-100 rounded-xl">
+      {% for o in owners %}
+      <li class="flex justify-between items-center px-4 py-2.5 text-sm">
+        <span class="font-medium text-gray-800">
+          {{ o.name }}
+          {% if not o.selected %}<span class="ml-1 text-[10px] text-gray-400">(not in your staff selection)</span>{% endif %}
+        </span>
+        <span class="text-gray-600">{{ o.count }} business{{ 'es' if o.count != 1 else '' }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <form method="POST" action="{{ url_for('manager.assign_business_bulk') }}" class="mt-5 space-y-3">
+      {% for s in staffs %}<input type="hidden" name="staff_ids" value="{{ s.id }}">{% endfor %}
+      {% for n in names %}<input type="hidden" name="business_names" value="{{ n }}">{% endfor %}
+      {% for k, v in filters.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+
+      <button type="submit" name="mode" value="keep"
+              class="w-full bg-brand-900 text-white rounded-xl py-3 text-sm font-semibold hover:bg-brand-700 transition">
+        Keep current owners, share only the {{ unassigned }} unassigned
+      </button>
+      <button type="submit" name="mode" value="reassign"
+              class="w-full border border-gray-200 text-gray-700 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition">
+        Reassign all {{ total }} evenly across {{ staffs | length }} staff
+      </button>
+      <a href="{{ back_url }}" class="block text-center text-xs text-gray-400 hover:text-gray-600 transition pt-1">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

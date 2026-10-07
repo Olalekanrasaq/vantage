@@ -45,134 +45,13 @@
     <h2 class="text-base font-bold text-gray-800">Latest Staff Activity Reports</h2>
   </div>
 
-  <!-- WRAPPER FOR AJAX SWAP -->
-  <div id="staff-table-content" class="transition-opacity duration-300">
-    {% if latest_staff_reports.items %}
-    
-    <!-- DESKTOP VIEW -->
-    <div class="hidden md:block overflow-x-auto">
-      <table class="w-full text-left text-sm whitespace-nowrap">
-        <thead class="bg-gray-50 text-gray-600 uppercase text-[10px] font-bold">
-          <tr>
-            <th class="px-4 py-3">Date</th>
-            <th class="px-4 py-3">Staff Member</th>
-            <th class="px-4 py-3 text-center">New Leads</th>
-            <th class="px-4 py-3 text-center">Visits</th>
-            <th class="px-4 py-3 text-center">Calls</th>
-            <th class="px-4 py-3 text-center">Recoveries</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          {% for report in latest_staff_reports.items %}
-          <tr class="hover:bg-gray-50 transition">
-            <td class="px-4 py-3 text-gray-500 text-xs">{{ report.report_date.strftime('%b %d, %Y') }}</td>
-            <td class="px-4 py-3 font-medium text-gray-800">{{ report.staff.username }}</td>
-            <td class="px-4 py-3 text-gray-700 text-center font-medium">{{ report.new_leads }}</td>
-            <td class="px-4 py-3 text-gray-700 text-center font-medium">{{ report.visits }}</td>
-            <td class="px-4 py-3 text-gray-700 text-center font-medium">{{ report.calls }}</td>
-            <td class="px-4 py-3 text-gray-700 text-center font-medium">{{ report.recoveries }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- MOBILE VIEW (CARDS) -->
-    <div class="block md:hidden divide-y divide-gray-100 border-t border-gray-100">
-      {% for report in latest_staff_reports.items %}
-      <div class="py-3 space-y-2 text-sm">
-        <div class="flex justify-between items-center">
-          <span class="font-semibold text-gray-800">{{ report.staff.username }}</span>
-          <span class="text-xs text-gray-500">{{ report.report_date.strftime('%b %d') }}</span>
-        </div>
-        <div class="grid grid-cols-4 gap-2 text-center text-xs bg-gray-50 p-2 rounded">
-          <div><div class="text-gray-400 uppercase text-[10px]">Leads</div><div class="font-semibold">{{ report.new_leads }}</div></div>
-          <div><div class="text-gray-400 uppercase text-[10px]">Visits</div><div class="font-semibold">{{ report.visits }}</div></div>
-          <div><div class="text-gray-400 uppercase text-[10px]">Calls</div><div class="font-semibold">{{ report.calls }}</div></div>
-          <div><div class="text-gray-400 uppercase text-[10px]">Recoveries</div><div class="font-semibold">{{ report.recoveries }}</div></div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    <!-- PAGINATION -->
-    {% if latest_staff_reports.pages > 1 %}
-    <div class="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
-      <span class="text-xs text-gray-500">Page {{ latest_staff_reports.page }} of {{ latest_staff_reports.pages }}</span>
-      <div class="flex space-x-2 text-xs">
-        {% if latest_staff_reports.has_prev %}
-        <a href="{{ url_for('manager.dashboard', staff_page=latest_staff_reports.prev_num, weekly_page=request.args.get('weekly_page', 1), ntt_page=request.args.get('ntt_page', 1), retention_page=request.args.get('retention_page', 1)) }}" 
-           class="pagination-link px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-100" data-target="staff-table-content">Prev</a>
-        {% endif %}
-        {% if latest_staff_reports.has_next %}
-        <a href="{{ url_for('manager.dashboard', staff_page=latest_staff_reports.next_num, weekly_page=request.args.get('weekly_page', 1), ntt_page=request.args.get('ntt_page', 1), retention_page=request.args.get('retention_page', 1)) }}" 
-           class="pagination-link px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-100" data-target="staff-table-content">Next</a>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
-
-    {% else %}
-    <div class="text-center text-gray-400 text-sm py-8">
-      No activity reports have been submitted yet.
-    </div>
-    {% endif %}
-  </div>
+  {% include "partials/staff_table.html" %}
 </div>
 
 <!-- Today's report tables -->
 <h2 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Today's Report</h2>
 {% include "partials/dashboard_tables.html" %}
 
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-    document.body.addEventListener('click', function(e) {
-        // Check if the clicked element is one of our pagination links
-        const link = e.target.closest('.pagination-link');
-        if (!link) return;
-        
-        e.preventDefault(); // Stop the page from reloading
-        
-        const url = link.href;
-        const targetId = link.getAttribute('data-target');
-        const container = document.getElementById(targetId);
-        
-        if (container) {
-            // Give visual feedback that it's loading
-            container.style.opacity = '0.5';
-            container.style.pointerEvents = 'none';
-            
-            // Fetch the next page in the background
-            fetch(url)
-                .then(response => response.text())
-                .then(html => {
-                    // Parse the returned HTML
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(html, 'text/html');
-                    
-                    // Extract just the inner contents of the specific table we want to update
-                    const newContent = doc.getElementById(targetId);
-                    
-                    if (newContent) {
-                        // Swap the new data in seamlessly
-                        container.innerHTML = newContent.innerHTML;
-                        
-                        // Update the browser URL without reloading so the user can refresh if needed
-                        window.history.replaceState(null, '', url);
-                    }
-                    
-                    // Restore table opacity
-                    container.style.opacity = '1';
-                    container.style.pointerEvents = 'auto';
-                })
-                .catch(err => {
-                    console.error('Pagination fetch error:', err);
-                    // If the background fetch fails for any reason, fall back to a normal page load
-                    window.location.href = url;
-                });
-        }
-    });
-});
-</script>
+{% include "partials/ajax_pagination.html" %}
 
 {% endblock %}

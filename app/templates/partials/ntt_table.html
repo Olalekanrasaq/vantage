@@ -1,0 +1,62 @@
+<!-- WRAPPER FOR AJAX SWAP -->
+<div id="ntt-table-content" class="transition-opacity duration-300">
+    {% if ntt_list.items %}
+    
+    <!-- DESKTOP VIEW -->
+    <div class="hidden md:block table-scroll">
+    <table class="w-full text-xs">
+        <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide">
+        <tr>
+            <th class="px-3 py-2 text-left">Business</th>
+            <th class="px-3 py-2 text-left">Terminal Serial</th>
+            <th class="px-3 py-2 text-center">Days Since Last Transaction</th>
+        </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+        {% for r in ntt_list.items %}
+        <tr class="hover:bg-gray-50">
+            <td class="px-3 py-2 font-medium text-gray-800">{{ r.business_name }}</td>
+            <td class="px-3 py-2 text-center text-gray-600">{{ r.terminal_serial}}</td>
+            <td class="px-3 py-2 text-center">
+            <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">{{ r.days_last_transact or '—' }}</span>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <!-- MOBILE VIEW (CARDS) -->
+    <div class="block md:hidden divide-y divide-gray-100">
+    {% for r in ntt_list.items %}
+    <div class="p-4 space-y-1 text-sm">
+        <div class="flex justify-between items-center">
+        <span class="font-semibold text-gray-800">{{ r.business_name }}</span>
+        <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">{{ r.days_last_transact or '—' }} Days</span>
+        </div>
+        <div class="text-gray-500 text-xs">Terminal: <span class="text-gray-800">{{ r.terminal_serial }}</span></div>
+    </div>
+    {% endfor %}
+    </div>
+
+    <!-- PAGINATION -->
+    {% if ntt_list.pages > 1 %}
+    <div class="flex justify-between items-center px-4 py-3 bg-gray-50 border-t border-gray-100">
+    <span class="text-xs text-gray-500">Page {{ ntt_list.page }} of {{ ntt_list.pages }}</span>
+    <div class="flex space-x-2 text-xs">
+        {% if ntt_list.has_prev %}
+        <a href="{{ url_for(request.endpoint, ntt_page=ntt_list.prev_num, weekly_page=request.args.get('weekly_page', 1), retention_page=request.args.get('retention_page', 1), staff_page=request.args.get('staff_page', 1)) }}" 
+            class="pagination-link px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-100" data-target="ntt-table-content">Prev</a>
+        {% endif %}
+        {% if ntt_list.has_next %}
+        <a href="{{ url_for(request.endpoint, ntt_page=ntt_list.next_num, weekly_page=request.args.get('weekly_page', 1), retention_page=request.args.get('retention_page', 1), staff_page=request.args.get('staff_page', 1)) }}" 
+            class="pagination-link px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-100" data-target="ntt-table-content">Next</a>
+        {% endif %}
+    </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p class="text-sm text-gray-400 text-center py-6">No non-transacting terminals.</p>
+    {% endif %}
+</div>

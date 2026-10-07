@@ -3,13 +3,15 @@ import json
 from google import genai
 from google.genai import types
 from decouple import config
+from collections import Counter
 
 from datetime import date, timedelta, datetime, timezone
-from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify, session
+from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify, session, make_response
 from flask_login import login_required, current_user, logout_user
 from flask import abort
 from functools import wraps
-from sqlalchemy import func, distinct
+from sqlalchemy import func, distinct, case, update, select
+from sqlalchemy.orm import selectinload, joinedload, contains_eager
 
 from app.blueprints.manager import manager_bp
 from app.extensions import db
@@ -22,6 +24,8 @@ from app.services.extraction_service import run_extraction, ExtractionError
 
 daily_target = 14286
 weekly_target = 100000
+
+staff_loader = selectinload(Staff.business_assignments).joinedload(StaffBusinessAssignment.business)
 
 def manager_required(f):
     @wraps(f)
@@ -37,67 +41,45 @@ def manager_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def _day_stats(model, manager_id, report_date, fallback_date, target):
+    """(distinct businesses, rows meeting target) in one aggregate query. Falls back if the date has no rows."""
+    for d in (report_date, fallback_date):
+        total, met = db.session.query(
+            func.count(distinct(model.business_name)),
+            func.coalesce(func.sum(case((model.payment_value >= target, 1), else_=0)), 0),
+        ).filter(model.manager_id == manager_id, model.report_date == d).one()
+        if total:
+            return total, int(met)
+    return 0, 0
+
+
+def _day_count(model, manager_id, report_date, fallback_date):
+    for d in (report_date, fallback_date):
+        n = db.session.query(func.count()).select_from(model).filter(
+            model.manager_id == manager_id, model.report_date == d
+        ).scalar()
+        if n:
+            return n
+    return 0
+
 
 def _get_dashboard_metrics(manager_id, report_date, prev_date, date_2_days_ago):
     """Compute all dashboard metrics for a given date and its previous date."""
+    total_biz, daily_met = _day_stats(DailyReport, manager_id, report_date, prev_date, daily_target)
+    weekly_total, weekly_met = _day_stats(WeeklyReport, manager_id, report_date, prev_date, weekly_target)
+    ntt_count = _day_count(NTTReport, manager_id, report_date, prev_date)
+    retention_count = _day_count(RetentionReport, manager_id, report_date, prev_date)
+    pending_tasks = RecoveryTask.query.filter_by(manager_id=manager_id, status='PENDING').count()
 
-    daily_target = 14286
-    weekly_target = 100000
-
-    def _daily_metrics(r_date, p_date):
-        # use prev_date if r_date is not available and use 
-        if not DailyReport.query.filter_by(manager_id=manager_id, report_date=r_date).first():
-            r_date = p_date
-        rows = DailyReport.query.filter_by(manager_id=manager_id, report_date=r_date).all()
-        total = len(set(r.business_name for r in rows))
-        met = sum(1 for r in rows if int(r.payment_value) >= daily_target)
-        return total, met
-
-    def _weekly_metrics(r_date, p_date):
-        # use prev_date if r_date is not available
-        if not WeeklyReport.query.filter_by(manager_id=manager_id, report_date=r_date).first():
-            r_date = p_date
-        rows = WeeklyReport.query.filter_by(manager_id=manager_id, report_date=r_date).all()
-        total = len(set(r.business_name for r in rows))
-        met = sum(1 for r in rows if int(r.payment_value) >= weekly_target)
-        return total, met
-
-    def _ntt_count(r_date, p_date):
-        # use prev_date if r_date is not available
-        if not NTTReport.query.filter_by(manager_id=manager_id, report_date=r_date).first():
-            r_date = p_date
-        return NTTReport.query.filter_by(manager_id=manager_id, report_date=r_date).count()
-
-    def _retention_count(r_date, p_date):
-        # use prev_date if r_date is not available
-        if not RetentionReport.query.filter_by(manager_id=manager_id, report_date=r_date).first():
-            r_date = p_date
-        return RetentionReport.query.filter_by(manager_id=manager_id, report_date=r_date).count()
-
-    def _pending_tasks():
-        return RecoveryTask.query.filter_by(manager_id=current_user.id, status='PENDING').count()
-
-    # Today
-    total_biz, daily_met = _daily_metrics(report_date, prev_date)
-    weekly_total, weekly_met = _weekly_metrics(report_date, prev_date)
-    ntt_count = _ntt_count(report_date, prev_date)
-    retention_count = _retention_count(report_date, prev_date)
-    pending_tasks = _pending_tasks()
-
-    # Previous day
-    prev_total, prev_daily_met = _daily_metrics(prev_date, date_2_days_ago)
-    prev_weekly_total, prev_weekly_met = _weekly_metrics(prev_date, date_2_days_ago)
-    prev_ntt = _ntt_count(prev_date, date_2_days_ago)
-    prev_retention = _retention_count(prev_date, date_2_days_ago)
+    prev_total, prev_daily_met = _day_stats(DailyReport, manager_id, prev_date, date_2_days_ago, daily_target)
+    prev_weekly_total, prev_weekly_met = _day_stats(WeeklyReport, manager_id, prev_date, date_2_days_ago, weekly_target)
+    prev_ntt = _day_count(NTTReport, manager_id, prev_date, date_2_days_ago)
+    prev_retention = _day_count(RetentionReport, manager_id, prev_date, date_2_days_ago)
 
     def pct(part, total):
         return round(part / total * 100, 1) if total else 0
 
-    def delta(curr, prev):
-        return curr - prev
-
     return {
-        # Current counts
         "total_businesses": total_biz,
         "daily_met": daily_met,
         "daily_met_pct": pct(daily_met, total_biz),
@@ -108,15 +90,14 @@ def _get_dashboard_metrics(manager_id, report_date, prev_date, date_2_days_ago):
         "ntt_pct": pct(ntt_count, total_biz),
         "retention_count": retention_count,
         "pending_tasks": pending_tasks or 0,
-        # Deltas vs previous day
-        "delta_total": delta(total_biz, prev_total),
-        "delta_daily_met": delta(daily_met, prev_daily_met),
-        "delta_weekly_met": delta(weekly_met, prev_weekly_met),
-        "delta_ntt": delta(ntt_count, prev_ntt),
-        "delta_retention": delta(retention_count, prev_retention),
+        "delta_total": total_biz - prev_total,
+        "delta_daily_met": daily_met - prev_daily_met,
+        "delta_weekly_met": weekly_met - prev_weekly_met,
+        "delta_ntt": ntt_count - prev_ntt,
+        "delta_retention": retention_count - prev_retention,
     }
 
-def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=None, weekly_page=1, ntt_page=1, retention_page=1):
+def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=None, weekly_page=1, ntt_page=1, retention_page=1, only=None):
     """
     Fetch the three dashboard tables with pagination.
     """
@@ -154,20 +135,50 @@ def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=No
         retention_q = retention_q.filter(RetentionReport.business_name.in_(business_filter))
 
     # Paginate each query instead of using .all()
-    weekly_not_met = weekly_q.order_by(WeeklyReport.payment_value.desc()).paginate(page=weekly_page, per_page=10, error_out=False)
-    ntt_list = ntt_q.order_by(NTTReport.days_last_transact.asc()).paginate(page=ntt_page, per_page=10, error_out=False)
-    retention_list = retention_q.order_by(RetentionReport.days_decline.asc()).paginate(page=retention_page, per_page=10, error_out=False)
+    weekly_not_met = ntt_list = retention_list = None
+    if only in (None, "weekly"):
+        weekly_not_met = weekly_q.order_by(WeeklyReport.payment_value.desc()).paginate(page=weekly_page, per_page=10, error_out=False)
+    if only in (None, "ntt"):
+        ntt_list = ntt_q.order_by(NTTReport.days_last_transact.asc()).paginate(page=ntt_page, per_page=10, error_out=False)
+    if only in (None, "retention"):
+        retention_list = retention_q.order_by(RetentionReport.days_decline.asc()).paginate(page=retention_page, per_page=10, error_out=False)
 
     return weekly_not_met, ntt_list, retention_list
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
+def _latest_staff_reports(manager_id, page):
+    # Latest date among THIS manager's staff only (it was a global max before)
+    max_date = (db.session.query(func.max(StaffActivityReport.report_date))
+                .select_from(StaffActivityReport)
+                .join(Staff, StaffActivityReport.staff_id == Staff.id)
+                .filter(Staff.manager_id == manager_id)
+                .scalar_subquery())
+    return (StaffActivityReport.query.join(Staff)
+            .options(contains_eager(StaffActivityReport.staff))
+            .filter(Staff.manager_id == manager_id, StaffActivityReport.report_date == max_date)
+            .order_by(StaffActivityReport.created_at.desc())
+            .paginate(page=page, per_page=10, error_out=False))
+
+
+def _fragment(template, **ctx):
+    resp = make_response(render_template(template, **ctx))
+    resp.headers["Vary"] = "X-Requested-Table"
+    return resp
+
+
+TABLE_FRAGMENTS = {
+    "weekly-table-content": ("weekly", "partials/weekly_table.html"),
+    "ntt-table-content": ("ntt", "partials/ntt_table.html"),
+    "retention-table-content": ("retention", "partials/retention_table.html"),
+}
+
+
 @manager_bp.route("/dashboard")
 @login_required
 @manager_required
 def dashboard():
-    # Grab independent pagination parameters from the URL
     weekly_page = request.args.get('weekly_page', 1, type=int)
     ntt_page = request.args.get('ntt_page', 1, type=int)
     retention_page = request.args.get('retention_page', 1, type=int)
@@ -178,24 +189,30 @@ def dashboard():
     yesterdays_report_date = today - timedelta(days=2)
     date_2_days_ago = today - timedelta(days=3)
 
+    # AJAX pagination: compute and render only the table that was clicked
+    target = request.headers.get("X-Requested-Table")
+    if target == "staff-table-content":
+        return _fragment("partials/staff_table.html",
+                         latest_staff_reports=_latest_staff_reports(current_user.id, staff_page))
+    if target in TABLE_FRAGMENTS:
+        only, template = TABLE_FRAGMENTS[target]
+        weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
+            current_user.id, todays_report_date, yesterdays_report_date,
+            weekly_page=weekly_page, ntt_page=ntt_page, retention_page=retention_page, only=only
+        )
+        return _fragment(template, weekly_not_met=weekly_not_met,
+                         ntt_list=ntt_list, retention_list=retention_list)
+
+    # Full page
     metrics = _get_dashboard_metrics(
         current_user.id, todays_report_date, yesterdays_report_date, date_2_days_ago
     )
-    
-    # Pass page numbers into the helper function
     weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
-        current_user.id, todays_report_date, yesterdays_report_date, 
+        current_user.id, todays_report_date, yesterdays_report_date,
         weekly_page=weekly_page, ntt_page=ntt_page, retention_page=retention_page
     )
-    staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
-
-    # staff activity table - update to use pagination
-    max_date = db.session.query(func.max(StaffActivityReport.report_date)).scalar_subquery()
-    latest_staff_reports = StaffActivityReport.query.join(Staff).filter(
-        Staff.manager_id == current_user.id
-    ).filter(
-        StaffActivityReport.report_date == max_date
-    ).order_by(StaffActivityReport.created_at.desc()).paginate(page=staff_page, per_page=10, error_out=False)
+    staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).options(staff_loader).all()
+    latest_staff_reports = _latest_staff_reports(current_user.id, staff_page)
 
     return render_template(
         "manager/dashboard.html",
@@ -254,7 +271,7 @@ def analysis():
 @login_required
 @manager_required
 def staffs():
-    all_staffs = Staff.query.filter_by(manager_id=current_user.id).all()
+    all_staffs = Staff.query.filter_by(manager_id=current_user.id).options(staff_loader).all()
     return render_template("manager/staff_setup.html", staffs=all_staffs)
 
 
@@ -322,7 +339,11 @@ def edit_staff(staff_id):
         return redirect(url_for("manager.staffs"))
 
     # Check if username is taken by another staff member
-    existing_user = Staff.query.filter(Staff.username == username, Staff.id != staff_id).first()
+    existing_user = Staff.query.filter(
+        Staff.manager_id == current_user.id,
+        Staff.username == username,
+        Staff.id != staff_id,
+    ).first()
     if existing_user:
         flash("Username is already taken by another staff member.", "error")
         return redirect(url_for("manager.staffs"))
@@ -361,10 +382,6 @@ def delete_staff(staff_id):
 
 # ── Business assignment ───────────────────────────────────────────────────────
 
-from sqlalchemy import func
-from datetime import date, timedelta
-from flask import request, render_template, redirect, url_for, flash, Response
-
 PAYMENT_BANDS = {
     "lt100k":    (0,          100_000),
     "100k_500k": (100_000,    500_000),
@@ -372,6 +389,8 @@ PAYMENT_BANDS = {
     "1m_2m":     (1_000_000,  2_000_000),
     "gt2m":      (2_000_000,  float("inf")),
 }
+
+BULK_FILTER_KEYS = ("search", "band", "ntt_only", "target_met_only", "target_not_met_only", "newly_added_only")
 
 def _preserve_filters():
     """Carry search/filter params back to the businesses page after POST."""
@@ -475,7 +494,12 @@ def businesses():
             headers={"Content-Disposition": f"attachment;filename=vantage_businesses_{latest_date}.csv"}
         )
 
-    all_businesses = Business.query.filter_by(manager_id=current_user.id, is_active=True).all()
+    all_businesses = (
+        Business.query.filter_by(manager_id=current_user.id, is_active=True)
+        .options(selectinload(Business.staff_assignments)
+                 .joinedload(StaffBusinessAssignment.staff))
+        .all()
+    )
     biz_map = {b.name: b for b in all_businesses}
     all_staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
 
@@ -541,56 +565,204 @@ def assign_business():
 @login_required
 @manager_required
 def assign_business_bulk():
-    """Handles both single and bulk assignments, splitting them across selected staff."""
-    staff_ids = request.form.getlist("staff_ids")
-    business_names = request.form.getlist("business_names")
-    
-    if not staff_ids or not business_names:
+    """
+    No mode: if any selected business is already assigned, show a confirmation page.
+    mode=keep | reassign: perform the assignment. All checks are redone server-side.
+    """
+    mode = request.form.get("mode", "check")
+    staff_ids = [int(s) for s in request.form.getlist("staff_ids") if s.isdigit()]
+    names = list(dict.fromkeys(n.strip() for n in request.form.getlist("business_names") if n.strip()))
+    back = url_for("manager.businesses") + _preserve_filters()
+
+    if not staff_ids or not names:
         flash("You must select at least one staff member and one business.", "error")
-        return redirect(url_for("manager.businesses") + _preserve_filters())
-        
-    staffs = Staff.query.filter(Staff.id.in_(staff_ids), Staff.manager_id == current_user.id).all()
+        return redirect(back)
+
+    staffs = (Staff.query
+              .filter(Staff.id.in_(staff_ids), Staff.manager_id == current_user.id)
+              .order_by(Staff.id).all())
     if not staffs:
         flash("Invalid staff selection.", "error")
-        return redirect(url_for("manager.businesses") + _preserve_filters())
-        
-    staff_count = len(staffs)
-    
-    for idx, b_name in enumerate(business_names):
-        # Round-robin assignment to evenly distribute businesses among selected staff
-        assigned_staff = staffs[idx % staff_count]
-        
-        # Ensure the Business record exists in the master table
-        business = Business.query.filter_by(manager_id=current_user.id, name=b_name).first()
-        if not business:
-            business = Business(manager_id=current_user.id, name=b_name, is_active=True)
-            db.session.add(business)
-            db.session.commit() # Commit to generate the ID
-            
-        # Overwrite existing assignment if it exists
-        existing = StaffBusinessAssignment.query.filter_by(business_id=business.id).first()
-        if existing:
-            db.session.delete(existing)
-            
-        # Create new assignment
-        new_assignment = StaffBusinessAssignment(staff_id=assigned_staff.id, business_id=business.id)
-        db.session.add(new_assignment)
-        
-    db.session.commit()
-    flash(f"Successfully assigned {len(business_names)} businesses to {staff_count} staff member(s).", "success")
-    return redirect(url_for("manager.businesses") + _preserve_filters())
+        return redirect(back)
 
+    # Read-only lookups: existing Business rows and their current assignments
+    biz_by_name = {
+        b.name: b for b in Business.query.filter(
+            Business.manager_id == current_user.id, Business.name.in_(names))
+    }
+    current = {}
+    if biz_by_name:
+        current = {
+            a.business_id: a for a in StaffBusinessAssignment.query.filter(
+                StaffBusinessAssignment.business_id.in_([b.id for b in biz_by_name.values()]))
+        }
+    owner_counts = Counter(a.staff_id for a in current.values())
+
+    # ── Step 1: check ─────────────────────────────────────────────────────────
+    if mode not in ("keep", "reassign"):
+        if not owner_counts:
+            mode = "reassign"  # nothing to conflict with, go straight through
+        else:
+            owners_by_id = {
+                s.id: s for s in Staff.query.filter(
+                    Staff.id.in_(list(owner_counts)), Staff.manager_id == current_user.id)
+            }
+            selected_ids = {s.id for s in staffs}
+            owners = sorted(
+                ({"name": owners_by_id[sid].full_name or owners_by_id[sid].username,
+                  "count": n, "selected": sid in selected_ids}
+                 for sid, n in owner_counts.items() if sid in owners_by_id),
+                key=lambda o: -o["count"],
+            )
+            already = sum(owner_counts.values())
+            flash(
+                f"{already} of the {len(names)} businesses you selected are already assigned: "
+                + ", ".join(f"{o['name']} ({o['count']})" for o in owners) + ".",
+                "warning",
+            )
+            return render_template(
+                "manager/bulk_confirm.html",
+                owners=owners, total=len(names), already=already,
+                unassigned=len(names) - already, names=names, staffs=staffs,
+                filters={k: request.form.get(k) for k in BULK_FILTER_KEYS if request.form.get(k)},
+                back_url=back,
+            )
+
+    # ── Step 2: perform ───────────────────────────────────────────────────────
+    new_biz = []
+    for n in names:
+        if n not in biz_by_name:
+            b = Business(manager_id=current_user.id, name=n, is_active=True)
+            biz_by_name[n] = b
+            new_biz.append(b)
+    if new_biz:
+        db.session.add_all(new_biz)
+        db.session.flush()  # assigns ids
+
+    now = datetime.now(timezone.utc)
+    load = {s.id: 0 for s in staffs}     # evenly shared across the selected staff
+    moves = {}                           # target staff_id -> existing assignment ids to repoint
+    added = moved = kept = unchanged = 0
+
+    for name in names:
+        biz = biz_by_name[name]
+        existing = current.get(biz.id)
+
+        if existing and mode == "keep":
+            kept += 1
+            continue
+
+        sid = min(load, key=load.get)    # least-loaded selected staff, ties go in staff order
+        load[sid] += 1
+
+        if existing is None:
+            db.session.add(StaffBusinessAssignment(staff_id=sid, business_id=biz.id))
+            added += 1
+        elif existing.staff_id != sid:
+            moves.setdefault(sid, []).append(existing.id)
+            moved += 1
+        else:
+            unchanged += 1
+
+    for target_staff_id, ids in moves.items():
+        db.session.execute(
+            update(StaffBusinessAssignment)
+            .where(StaffBusinessAssignment.id.in_(ids))
+            .values(staff_id=target_staff_id, assigned_at=now)
+            .execution_options(synchronize_session=False)
+        )
+
+    db.session.commit()  # one commit for everything
+
+    staff_label = ", ".join(s.full_name or s.username for s in staffs)
+    parts = [f"Assigned {added} business(es) across {staff_label}"]
+    if moved:
+        parts.append(f"reassigned {moved}")
+    if unchanged:
+        parts.append(f"{unchanged} already with the right staff")
+    if kept:
+        parts.append(f"kept {kept} with their current owners")
+    flash(", ".join(parts) + ".", "success")
+    return redirect(back)
 
 @manager_bp.route("/businesses/unassign/<int:assignment_id>", methods=["POST"])
 @login_required
 @manager_required
 def unassign_business(assignment_id):
-    assignment = StaffBusinessAssignment.query.get_or_404(assignment_id)
+    assignment = (StaffBusinessAssignment.query
+                  .join(Staff, StaffBusinessAssignment.staff_id == Staff.id)
+                  .filter(StaffBusinessAssignment.id == assignment_id,
+                          Staff.manager_id == current_user.id)
+                  .first_or_404())
     db.session.delete(assignment)
     db.session.commit()
     flash("Business unassigned.", "info")
     return redirect(url_for("manager.businesses") + _preserve_filters())
 
+@manager_bp.route("/businesses/unassign/bulk", methods=["POST"])
+@login_required
+@manager_required
+def unassign_business_bulk():
+    """Remove the assignment (whoever holds it) for every selected business."""
+    names = list(dict.fromkeys(n.strip() for n in request.form.getlist("business_names") if n.strip()))
+    back = url_for("manager.businesses") + _preserve_filters()
+    if not names:
+        flash("Select at least one business.", "error")
+        return redirect(back)
+
+    rows = (db.session.query(StaffBusinessAssignment.id, Staff.full_name, Staff.username)
+            .join(Staff, StaffBusinessAssignment.staff_id == Staff.id)
+            .join(Business, StaffBusinessAssignment.business_id == Business.id)
+            .filter(Business.manager_id == current_user.id, Business.name.in_(names))
+            .all())
+    if not rows:
+        flash("None of the selected businesses are currently assigned.", "info")
+        return redirect(back)
+
+    StaffBusinessAssignment.query.filter(
+        StaffBusinessAssignment.id.in_([r.id for r in rows])
+    ).delete(synchronize_session=False)
+    db.session.commit()
+
+    by_staff = Counter(r.full_name or r.username for r in rows)
+    flash(f"Unassigned {len(rows)} business(es): "
+          + ", ".join(f"{n} ({c})" for n, c in by_staff.most_common()) + ".", "success")
+    return redirect(back)
+
+
+@manager_bp.route("/staffs/<int:staff_id>/unassign", methods=["POST"])
+@login_required
+@manager_required
+def unassign_staff_businesses(staff_id):
+    """Unassign all (all=1) or the selected business_ids from one staff member."""
+    staff = Staff.query.filter_by(id=staff_id, manager_id=current_user.id).first_or_404()
+    q = StaffBusinessAssignment.query.filter(StaffBusinessAssignment.staff_id == staff.id)
+
+    if request.form.get("all") != "1":
+        ids = [int(i) for i in request.form.getlist("business_ids") if i.isdigit()]
+        if not ids:
+            flash("Select at least one business to unassign.", "error")
+            return redirect(url_for("manager.staffs"))
+        q = q.filter(StaffBusinessAssignment.business_id.in_(ids))
+
+    n = q.delete(synchronize_session=False)
+    db.session.commit()
+    flash(f"Unassigned {n} business(es) from {staff.full_name or staff.username}.", "success")
+    return redirect(url_for("manager.staffs"))
+
+
+@manager_bp.route("/staffs/unassign-all", methods=["POST"])
+@login_required
+@manager_required
+def unassign_all_businesses():
+    """Remove every business assignment for every staff member of this manager."""
+    n = StaffBusinessAssignment.query.filter(
+        StaffBusinessAssignment.staff_id.in_(
+            select(Staff.id).where(Staff.manager_id == current_user.id))
+    ).delete(synchronize_session=False)
+    db.session.commit()
+    flash(f"Unassigned {n} business(es) from all staff.", "success")
+    return redirect(url_for("manager.staffs"))
 
 # ── Manual upload ─────────────────────────────────────────────────────────────
 

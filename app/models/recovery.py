@@ -16,6 +16,11 @@ class RecoveryTask(db.Model):
     is_cleared = db.Column(db.Boolean, default=False, server_default=db.false(), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    __table_args__ = (
+        db.Index("ix_recovery_manager_status", "manager_id", "status"),
+        db.Index("ix_recovery_staff_status", "staff_id", "status"),
+    )
+
     # Relationships
     business = db.relationship("Business", back_populates="recovery_tasks")
     staff = db.relationship("Staff", back_populates="recovery_tasks")

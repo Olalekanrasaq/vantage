@@ -6,7 +6,7 @@ from functools import wraps
 from app.blueprints.staff import staff_bp
 from app.extensions import db
 from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask, FieldVisit, Business, CallLog
-from app.blueprints.manager.routes import _get_dashboard_metrics, _get_dashboard_tables
+from app.blueprints.manager.routes import _get_dashboard_tables, TABLE_FRAGMENTS, _fragment
 
 import os
 from werkzeug.utils import secure_filename
@@ -37,9 +37,23 @@ def dashboard():
 
     manager_id = current_user.manager_id
     assigned_names = [b.name for b in current_user.assigned_businesses]
-    assigned_ids = [b.id for b in current_user.assigned_businesses]
 
-    metrics = _get_dashboard_metrics(manager_id, todays_report_date, yesterdays_report_date, date_2_days_ago)
+    weekly_page = request.args.get('weekly_page', 1, type=int)
+    ntt_page = request.args.get('ntt_page', 1, type=int)
+    retention_page = request.args.get('retention_page', 1, type=int)
+
+    # AJAX pagination: compute and render only the clicked table
+    target = request.headers.get("X-Requested-Table")
+    if target in TABLE_FRAGMENTS:
+        only, template = TABLE_FRAGMENTS[target]
+        weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
+            manager_id, todays_report_date, yesterdays_report_date,
+            business_filter=assigned_names,
+            weekly_page=weekly_page, ntt_page=ntt_page, retention_page=retention_page,
+            only=only,
+        )
+        return _fragment(template, weekly_not_met=weekly_not_met,
+                         ntt_list=ntt_list, retention_list=retention_list)
 
     # Fetch recovery tasks assigned to this staff member
     assigned_tasks = RecoveryTask.query.filter_by(
@@ -227,6 +241,10 @@ def visits():
                 flash("Business and purpose are required.", "error")
                 return redirect(url_for("staff.visits"))
 
+            if business_id not in {b.id for b in assigned_businesses}:
+                flash("You can only log activity for your assigned businesses.", "error")
+                return redirect(url_for("staff.visits"))
+
             # Handle image upload
             file = request.files.get("visit_image")
             
@@ -274,6 +292,10 @@ def visits():
             
             if not business_id or not purpose:
                 flash("Business and purpose are required.", "error")
+                return redirect(url_for("staff.visits"))
+
+            if business_id not in {b.id for b in assigned_businesses}:
+                flash("You can only log activity for your assigned businesses.", "error")
                 return redirect(url_for("staff.visits"))
                 
             call_log = CallLog(

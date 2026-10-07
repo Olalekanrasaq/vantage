@@ -1,0 +1,71 @@
+<!-- WRAPPER FOR AJAX SWAP -->
+<div id="retention-table-content" class="transition-opacity duration-300">
+    {% if retention_list.items %}
+    
+    <!-- DESKTOP VIEW -->
+    <div class="hidden md:block table-scroll">
+    <table class="w-full text-xs">
+        <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide">
+        <tr>
+            <th class="px-3 py-2 text-left">Business</th>
+            <th class="px-3 py-2 text-right">Min Volume</th>
+            <th class="px-3 py-2 text-right">Vol Meet</th>
+            <th class="px-3 py-2 text-center">Days Declined</th>
+        </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+        {% for r in retention_list.items %}
+        <tr class="hover:bg-gray-50">
+            <td class="px-3 py-2 font-medium text-gray-800 max-w-[120px] truncate">{{ r.business_name }}</td>
+            <td class="px-3 py-2 text-right text-gray-700">{{ r.min_volume or '—' }}</td>
+            <td class="px-3 py-2 text-right text-gray-700">{{ r.vol_meet or '—' }}</td>
+            <td class="px-3 py-2 text-center">
+            <span class="px-1.5 py-0.5 rounded text-xs font-semibold {% if (r.days_decline or '0')|int > 7 %} bg-red-100 text-red-700 {% elif (r.days_decline or '0')|int > 3 %} bg-orange-100 text-orange-700 {% else %} bg-yellow-100 text-yellow-700 {% endif %}">
+                {{ r.days_decline or '—' }}
+            </span>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <!-- MOBILE VIEW (CARDS) -->
+    <div class="block md:hidden divide-y divide-gray-100">
+    {% for r in retention_list.items %}
+    <div class="p-4 space-y-2 text-sm">
+        <div class="flex justify-between items-center">
+        <span class="font-semibold text-gray-800">{{ r.business_name }}</span>
+        <span class="px-1.5 py-0.5 rounded text-xs font-semibold {% if (r.days_decline or '0')|int > 7 %} bg-red-100 text-red-700 {% elif (r.days_decline or '0')|int > 3 %} bg-orange-100 text-orange-700 {% else %} bg-yellow-100 text-yellow-700 {% endif %}">
+            {{ r.days_decline or '—' }} Days Declined
+        </span>
+        </div>
+        <div class="flex justify-between text-gray-600 text-xs">
+        <span>Min Vol: {{ r.min_volume or '—' }}</span>
+        <span>Vol Meet: {{ r.vol_meet or '—' }}</span>
+        </div>
+    </div>
+    {% endfor %}
+    </div>
+
+    <!-- PAGINATION -->
+    {% if retention_list.pages > 1 %}
+    <div class="flex justify-between items-center px-4 py-3 bg-gray-50 border-t border-gray-100">
+    <span class="text-xs text-gray-500">Page {{ retention_list.page }} of {{ retention_list.pages }}</span>
+    <div class="flex space-x-2 text-xs">
+        {% if retention_list.has_prev %}
+        <a href="{{ url_for(request.endpoint, retention_page=retention_list.prev_num, weekly_page=request.args.get('weekly_page', 1), ntt_page=request.args.get('ntt_page', 1), staff_page=request.args.get('staff_page', 1)) }}" 
+            class="pagination-link px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-100" data-target="retention-table-content">Prev</a>
+        {% endif %}
+        {% if retention_list.has_next %}
+        <a href="{{ url_for(request.endpoint, retention_page=retention_list.next_num, weekly_page=request.args.get('weekly_page', 1), ntt_page=request.args.get('ntt_page', 1), staff_page=request.args.get('staff_page', 1)) }}" 
+            class="pagination-link px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-100" data-target="retention-table-content">Next</a>
+        {% endif %}
+    </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p class="text-sm text-gray-400 text-center py-6">No declined top businesses.</p>
+    {% endif %}
+</div>

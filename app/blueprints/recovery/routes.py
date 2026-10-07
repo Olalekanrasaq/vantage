@@ -48,6 +48,9 @@ def center():
 def create_task():
     business_name = request.form.get("business_name", "").strip()
     staff_id = request.form.get("staff_id", type=int)
+    if staff_id and not Staff.query.filter_by(id=staff_id, manager_id=current_user.id).first():
+        flash("Invalid staff selection.", "error")
+        return redirect(url_for("recovery.center"))
     terminal_serial = request.form.get("terminal_serial", "").strip()  # <--- Ensure this is captured from form
     notes = request.form.get("notes", "").strip()
     days_inactive = request.form.get("days_inactive", "0")

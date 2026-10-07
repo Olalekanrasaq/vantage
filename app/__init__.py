@@ -3,8 +3,12 @@ from datetime import timedelta
 from flask import Flask
 from config import config
 from app.extensions import db, login_manager, migrate, scheduler
+from app.profiler import init_query_profiler
 from app.models import SuperAdmin, BusinessManager, Staff
 from app.services.reminder_service import send_grace_reminders, send_missing_report_alerts
+
+from sqlalchemy.orm import joinedload, selectinload
+from app.models import SuperAdmin, BusinessManager, Staff, StaffBusinessAssignment
 
 
 def create_app(config_name=None):
@@ -20,6 +24,9 @@ def create_app(config_name=None):
     migrate.init_app(app, db)
     login_manager.init_app(app)
 
+    if app.debug:
+        init_query_profiler(app)
+
     # ── User loader ───────────────────────────────────────────────────────────
     # Flask-Login calls this to reload the user from the session.
     # We prefix IDs (sa-, bm-, st-) to distinguish user types.
@@ -30,7 +37,12 @@ def create_app(config_name=None):
         elif user_id.startswith("bm-"):
             return BusinessManager.query.get(int(user_id[3:]))
         elif user_id.startswith("st-"):
-            return Staff.query.get(int(user_id[3:]))
+            return (Staff.query
+                    .options(joinedload(Staff.manager),
+                             selectinload(Staff.business_assignments)
+                             .joinedload(StaffBusinessAssignment.business))
+                    .filter_by(id=int(user_id[3:]))
+                    .first())
         return None
 
     # ── Register blueprints ───────────────────────────────────────────────────

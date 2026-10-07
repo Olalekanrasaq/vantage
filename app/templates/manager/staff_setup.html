@@ -63,6 +63,15 @@
     </div>
 </div>
 
+{% if staffs %}
+<form method="POST" action="{{ url_for('manager.unassign_all_businesses') }}" class="mb-4 text-right"
+      onsubmit="return confirm('Remove EVERY business assignment from ALL staff? This cannot be undone.')">
+    <button type="submit" class="text-xs text-red-600 hover:text-red-700 font-semibold underline">
+        Unassign all businesses from all staff
+    </button>
+</form>
+{% endif %}
+
 <!-- Staff list -->
 <div class="space-y-3">
     {% for staff in staffs %}
@@ -166,22 +175,51 @@
             </div>
         </div>
 
+        {% set assigned = staff.assigned_businesses %}
         <!-- Expandable Businesses List -->
         <div x-show="showBusinesses" x-cloak
              x-transition:enter="transition ease-out duration-150"
              x-transition:enter-start="opacity-0 -translate-y-2"
              x-transition:enter-end="opacity-100 translate-y-0"
              class="mt-3 pt-3 border-t border-gray-50">
-            
-            {% if staff.assigned_businesses %}
+
+            {% if assigned %}
+            {% set ids = assigned | map(attribute='id') | map('string') | list %}
+            <form method="POST" action="{{ url_for('manager.unassign_staff_businesses', staff_id=staff.id) }}"
+                  x-data='{ picked: [], allIds: {{ ids | tojson }} }'>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                        <input type="checkbox" class="rounded border-gray-300"
+                               :checked="picked.length > 0 && picked.length === allIds.length"
+                               @change="picked = $event.target.checked ? [...allIds] : []">
+                        Select all
+                    </label>
+                    <div class="flex items-center gap-2">
+                        <button type="submit" :disabled="picked.length === 0"
+                                data-confirm="Unassign the selected businesses from {{ staff.username }}?"
+                                onclick="return confirm(this.dataset.confirm)"
+                                class="text-xs bg-white text-red-600 border border-red-200 hover:bg-red-50 px-2.5 py-1 rounded-lg font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed">
+                            Unassign selected (<span x-text="picked.length"></span>)
+                        </button>
+                        <button type="submit" name="all" value="1"
+                                data-confirm="Unassign ALL {{ assigned | length }} businesses from {{ staff.username }}?"
+                                onclick="return confirm(this.dataset.confirm)"
+                                class="text-xs bg-red-600 text-white hover:bg-red-700 px-2.5 py-1 rounded-lg font-semibold transition">
+                            Unassign all
+                        </button>
+                    </div>
+                </div>
+
                 <ul class="space-y-2 max-h-40 overflow-y-auto pr-2">
-                    {% for assignment in staff.assigned_businesses %}
+                    {% for b in assigned %}
                     <li class="text-xs text-gray-600 flex items-center gap-2">
-                        <svg class="w-3 h-3 text-brand-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-                        <span class="truncate">{{ assignment.business.name if assignment.business else assignment.name }}</span>
+                        <input type="checkbox" name="business_ids" value="{{ b.id }}" x-model="picked"
+                               class="rounded border-gray-300 shrink-0">
+                        <span class="truncate">{{ b.name }}</span>
                     </li>
                     {% endfor %}
                 </ul>
+            </form>
             {% else %}
                 <p class="text-xs text-gray-400 italic">No businesses currently assigned.</p>
             {% endif %}

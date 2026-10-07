@@ -53,6 +53,7 @@ class StaffBusinessAssignment(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("staff_id", "business_id", name="uq_staff_business"),
+        db.Index("ix_assignment_business", "business_id"),
     )
 
     def __repr__(self):

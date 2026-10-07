@@ -19,6 +19,10 @@ class FetchLog(db.Model):
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    __table_args__ = (
+        db.Index("ix_fetchlog_manager_date", "manager_id", "report_date"),
+    )
+
     # Relationships
     manager = db.relationship("BusinessManager", back_populates="fetch_logs")
 

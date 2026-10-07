@@ -1,0 +1,36 @@
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    document.body.addEventListener('click', function (e) {
+        const link = e.target.closest('.pagination-link');
+        if (!link) return;
+        e.preventDefault();
+
+        const url = link.href;
+        const targetId = link.getAttribute('data-target');
+        const container = document.getElementById(targetId);
+        if (!container) { window.location.href = url; return; }
+
+        container.style.opacity = '0.5';
+        container.style.pointerEvents = 'none';
+
+        fetch(url, { headers: { "X-Requested-Table": targetId } })
+            .then(r => r.text())
+            .then(html => {
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const newContent = doc.getElementById(targetId);
+                if (newContent) {
+                    container.innerHTML = newContent.innerHTML;
+                    window.history.replaceState(null, '', url);
+                }
+            })
+            .catch(err => {
+                console.error('Pagination fetch error:', err);
+                window.location.href = url;
+            })
+            .finally(() => {
+                container.style.opacity = '1';
+                container.style.pointerEvents = 'auto';
+            });
+    });
+});
+</script>

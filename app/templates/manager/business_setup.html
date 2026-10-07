@@ -6,7 +6,8 @@
 <div x-data="{ 
     selectedBusinesses: [], 
     selectAll: false,
-    bulkModalOpen: false
+    bulkModalOpen: false,
+    unassignModalOpen: false
 }">
 
   <div class="mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -26,6 +27,14 @@
                 x-transition.opacity
                 class="bg-brand-900 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-brand-800 shadow-md transition">
             Bulk Assign (<span x-text="selectedBusinesses.length"></span>)
+        </button>
+        <button type="button"
+                x-cloak
+                x-show="selectedBusinesses.length > 0"
+                @click="unassignModalOpen = true"
+                x-transition.opacity
+                class="bg-white text-red-600 border border-red-200 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-50 shadow-sm transition">
+            Bulk Unassign (<span x-text="selectedBusinesses.length"></span>)
         </button>
     </div>
   </div>
@@ -377,6 +386,35 @@
               <div class="flex gap-3 justify-end">
                   <button type="button" @click="bulkModalOpen = false" class="px-5 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
                   <button type="submit" class="px-5 py-2.5 text-sm font-semibold text-white bg-brand-900 hover:bg-brand-700 rounded-xl shadow transition">Confirm Assignment</button>
+              </div>
+          </form>
+      </div>
+  </div>
+  <!-- BULK UNASSIGN MODAL -->
+  <div x-show="unassignModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" style="display: none;" x-transition x-cloak>
+      <div @click.away="unassignModalOpen = false" class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+              <h3 class="font-bold text-gray-800">Unassign Businesses</h3>
+          </div>
+          <form method="POST" action="{{ url_for('manager.unassign_business_bulk') }}" class="p-6">
+              <input type="hidden" name="search" value="{{ search }}">
+              <input type="hidden" name="band" value="{{ band }}">
+              {% if ntt_only %}<input type="hidden" name="ntt_only" value="1">{% endif %}
+              {% if target_met_only %}<input type="hidden" name="target_met_only" value="1">{% endif %}
+              {% if target_not_met_only %}<input type="hidden" name="target_not_met_only" value="1">{% endif %}
+              {% if newly_added_only %}<input type="hidden" name="newly_added_only" value="1">{% endif %}
+
+              <template x-for="name in selectedBusinesses">
+                  <input type="hidden" name="business_names" :value="name">
+              </template>
+
+              <p class="text-sm text-gray-600 mb-6">
+                  Remove the staff assignment from <strong x-text="selectedBusinesses.length"></strong> selected businesses?
+                  Businesses that aren't assigned are ignored.
+              </p>
+              <div class="flex gap-3 justify-end">
+                  <button type="button" @click="unassignModalOpen = false" class="px-5 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
+                  <button type="submit" class="px-5 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow transition">Unassign</button>
               </div>
           </form>
       </div>

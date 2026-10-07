@@ -41,6 +41,8 @@ class Config:
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max upload
 
+    # Werkzeug form parts
+    MAX_FORM_PARTS = 5000
 
 class DevelopmentConfig(Config):
     DEBUG = True

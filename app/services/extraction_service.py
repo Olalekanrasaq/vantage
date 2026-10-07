@@ -66,15 +66,19 @@ def run_extraction(manager, pdf_bytes: bytes, report_date: date, source: str = "
 
     # 3. Replace this date's rows atomically.
     try:
+        biz_map = {
+            name: bid for name, bid in
+            db.session.query(Business.name, Business.id).filter(Business.manager_id == manager.id)
+        }
         counts = {
             "daily": _replace(DailyReport, manager, report_date,
-                              _daily_rows(manager, frames["daily"], source)),
+                              _daily_rows(manager, frames["daily"], source, biz_map)),
             "weekly": _replace(WeeklyReport, manager, report_date,
-                               _weekly_rows(manager, frames["weekly"], source)),
+                               _weekly_rows(manager, frames["weekly"], source, biz_map)),
             "ntt": _replace(NTTReport, manager, report_date,
-                            _ntt_rows(manager, frames["ntt"], source)),
+                            _ntt_rows(manager, frames["ntt"], source, biz_map)),
             "retention": _replace(RetentionReport, manager, report_date,
-                                  _retention_rows(manager, frames["retention"], source)),
+                                  _retention_rows(manager, frames["retention"], source, biz_map)),
         }
         db.session.commit()
     except Exception as e:
@@ -336,15 +340,15 @@ def extract_retention_report(pdf_bytes: bytes) -> pd.DataFrame:
 
 # ── DB persistence helpers ────────────────────────────────────────────────────
 
-def _get_or_create_business(manager_id, name):
-    """Get or create a Business record, return its id."""
+def _get_or_create_business(manager_id, name, biz_map):
+    """Get or create a Business record, return its id. biz_map avoids one SELECT per row."""
     name = name.strip()
-    business = Business.query.filter_by(manager_id=manager_id, name=name).first()
-    if not business:
+    if name not in biz_map:
         business = Business(manager_id=manager_id, name=name)
         db.session.add(business)
         db.session.flush()
-    return business.id
+        biz_map[name] = business.id
+    return biz_map[name]
 
 
 def _replace(model, manager, report_date, rows: dict) -> int:
@@ -363,7 +367,7 @@ def _replace(model, manager, report_date, rows: dict) -> int:
 # Row builders. Dicts are keyed on the same columns as each table's unique
 # constraint, so duplicate rows inside one PDF collapse to the last one.
 
-def _daily_rows(manager, df: pd.DataFrame, source: str) -> dict:
+def _daily_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> dict:
     rows = {}
     for _, row in df.iterrows():
         name = str(row.get("business_name", "")).strip()
@@ -371,7 +375,7 @@ def _daily_rows(manager, df: pd.DataFrame, source: str) -> dict:
             continue
         serial = str(row.get("terminal_serial", ""))
         rows[(name, serial)] = dict(
-            business_id=_get_or_create_business(manager.id, name),
+            business_id=_get_or_create_business(manager.id, name, biz_map),
             source=source,
             business_name=name,
             terminal_serial=serial,
@@ -383,14 +387,14 @@ def _daily_rows(manager, df: pd.DataFrame, source: str) -> dict:
     return rows
 
 
-def _weekly_rows(manager, df: pd.DataFrame, source: str) -> dict:
+def _weekly_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> dict:
     rows = {}
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
         rows[name] = dict(
-            business_id=_get_or_create_business(manager.id, name),
+            business_id=_get_or_create_business(manager.id, name, biz_map),
             source=source,
             business_name=name,
             target_met=str(row.get("target_met", "")),
@@ -401,14 +405,14 @@ def _weekly_rows(manager, df: pd.DataFrame, source: str) -> dict:
     return rows
 
 
-def _ntt_rows(manager, df: pd.DataFrame, source: str) -> dict:
+def _ntt_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> dict:
     rows = {}
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
         rows[name] = dict(
-            business_id=_get_or_create_business(manager.id, name),
+            business_id=_get_or_create_business(manager.id, name, biz_map),
             source=source,
             business_name=name,
             terminal_serial=str(row.get("terminal_serial", row.get("Terminal Serial", ""))).strip(),
@@ -417,14 +421,14 @@ def _ntt_rows(manager, df: pd.DataFrame, source: str) -> dict:
     return rows
 
 
-def _retention_rows(manager, df: pd.DataFrame, source: str) -> dict:
+def _retention_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> dict:
     rows = {}
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
         rows[name] = dict(
-            business_id=_get_or_create_business(manager.id, name),
+            business_id=_get_or_create_business(manager.id, name, biz_map),
             source=source,
             business_name=name,
             min_volume=str(row.get("min_volume", "")),

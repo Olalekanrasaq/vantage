@@ -1,0 +1,71 @@
+<!-- WRAPPER FOR AJAX SWAP -->
+<div id="weekly-table-content" class="transition-opacity duration-300">
+    {% if weekly_not_met.items %}
+    
+    <!-- DESKTOP VIEW -->
+    <div class="hidden md:block table-scroll">
+    <table class="w-full text-xs">
+        <thead class="bg-gray-50 text-gray-400 uppercase tracking-wide">
+        <tr>
+            <th class="px-3 py-2 text-left">Business</th>
+            <th class="px-3 py-2 text-right">Vol</th>
+            <th class="px-3 py-2 text-right">Value (₦)</th>
+            <th class="px-3 py-2 text-center">Days Last Transact</th>
+        </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+        {% for r in weekly_not_met.items %}
+        <tr class="hover:bg-gray-50">
+            <td class="px-3 py-2 font-medium text-gray-800 max-w-[120px] truncate">{{ r.business_name }}</td>
+            <td class="px-3 py-2 text-right text-gray-700">{{ "{:,}".format(r.payment_vol or 0) }}</td>
+            <td class="px-3 py-2 text-right text-gray-700">{{ "{:,.0f}".format(r.payment_value or 0) }}</td>
+            <td class="px-3 py-2 text-center">
+            <span class="px-1.5 py-0.5 rounded text-xs font-medium {% if (r.days_last_transact or '0')|int > 3 %} bg-red-100 text-red-700 {% else %} bg-yellow-100 text-yellow-700 {% endif %}">
+                {{ r.days_last_transact or '—' }}
+            </span>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <!-- MOBILE VIEW (CARDS) -->
+    <div class="block md:hidden divide-y divide-gray-100">
+    {% for r in weekly_not_met.items %}
+    <div class="p-4 space-y-2 text-sm">
+        <div class="flex justify-between items-center">
+        <span class="font-semibold text-gray-800">{{ r.business_name }}</span>
+        <span class="px-2 py-0.5 rounded text-xs font-medium {% if (r.days_last_transact or '0')|int > 3 %} bg-red-100 text-red-700 {% else %} bg-yellow-100 text-yellow-700 {% endif %}">
+            {{ r.days_last_transact or '—' }} Days
+        </span>
+        </div>
+        <div class="flex justify-between text-gray-600 text-xs">
+        <span>Vol: {{ "{:,}".format(r.payment_vol or 0) }}</span>
+        <span class="font-medium text-gray-900">₦{{ "{:,.0f}".format(r.payment_value or 0) }}</span>
+        </div>
+    </div>
+    {% endfor %}
+    </div>
+
+    <!-- PAGINATION -->
+    {% if weekly_not_met.pages > 1 %}
+    <div class="flex justify-between items-center px-4 py-3 bg-gray-50 border-t border-gray-100">
+    <span class="text-xs text-gray-500">Page {{ weekly_not_met.page }} of {{ weekly_not_met.pages }}</span>
+    <div class="flex space-x-2 text-xs">
+        {% if weekly_not_met.has_prev %}
+        <a href="{{ url_for(request.endpoint, weekly_page=weekly_not_met.prev_num, ntt_page=request.args.get('ntt_page', 1), retention_page=request.args.get('retention_page', 1), staff_page=request.args.get('staff_page', 1)) }}" 
+            class="pagination-link px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-100" data-target="weekly-table-content">Prev</a>
+        {% endif %}
+        {% if weekly_not_met.has_next %}
+        <a href="{{ url_for(request.endpoint, weekly_page=weekly_not_met.next_num, ntt_page=request.args.get('ntt_page', 1), retention_page=request.args.get('retention_page', 1), staff_page=request.args.get('staff_page', 1)) }}" 
+            class="pagination-link px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-100" data-target="weekly-table-content">Next</a>
+        {% endif %}
+    </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p class="text-sm text-gray-400 text-center py-6">All businesses are meeting weekly target.</p>
+    {% endif %}
+</div>
