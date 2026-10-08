@@ -7,9 +7,8 @@ from app.blueprints.staff import staff_bp
 from app.extensions import db
 from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask, FieldVisit, Business, CallLog
 from app.blueprints.manager.routes import _get_dashboard_tables, TABLE_FRAGMENTS, _fragment
-
-import os
-from werkzeug.utils import secure_filename
+from sqlalchemy.orm import selectinload
+from app.services.storage_service import upload_visit_photo, delete_photo, ImageError
 
 def staff_required(f):
     @wraps(f)
@@ -247,22 +246,18 @@ def visits():
 
             # Handle image upload
             file = request.files.get("visit_image")
-            
-            # Check if file is completely missing or empty
             if not file or not file.filename:
                 flash("A visit picture/proof is mandatory to log a field visit.", "error")
                 return redirect(url_for("staff.visits"))
 
-            # Proceed to process the uploaded image
-            ext = file.filename.rsplit(".", 1)[1].lower() if "." in file.filename else ""
-            if ext in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
-                filename = secure_filename(f"visit_{current_user.id}_{today}_{file.filename}")
-                upload_folder = current_app.config["VISIT_UPLOAD_FOLDER"]
-                os.makedirs(upload_folder, exist_ok=True)
-                file.save(os.path.join(upload_folder, filename))
-                image_filename = filename
-            else:
-                flash("Invalid image format. Allowed formats: png, jpg, jpeg, webp.", "error")
+            try:
+                image_key = upload_visit_photo(file, current_user.manager_id, today)
+            except ImageError as e:
+                flash(str(e), "error")
+                return redirect(url_for("staff.visits"))
+            except Exception:
+                current_app.logger.exception("Visit photo upload failed")
+                flash("Could not upload the photo. Please try again.", "error")
                 return redirect(url_for("staff.visits"))
 
             visit = FieldVisit(
@@ -275,10 +270,15 @@ def visits():
                 action_taken=action_taken,
                 result=result,
                 next_follow_up=next_follow_up,
-                image_filename=image_filename
+                image_filename=image_key,
             )
             db.session.add(visit)
-            db.session.commit()
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                delete_photo(image_key)     # no orphaned object if the DB write fails
+                raise
             flash("Field visit logged successfully.", "success")
             
         # ==========================================
@@ -314,9 +314,13 @@ def visits():
         return redirect(url_for("staff.visits"))
 
     # Fetch both histories
-    staff_visits = FieldVisit.query.filter_by(staff_id=current_user.id).order_by(FieldVisit.visit_date.desc()).all()
-    staff_calls = CallLog.query.filter_by(staff_id=current_user.id).order_by(CallLog.call_date.desc()).all()
-
+    staff_visits = (FieldVisit.query.filter_by(staff_id=current_user.id)
+                    .options(selectinload(FieldVisit.business))
+                    .order_by(FieldVisit.visit_date.desc(), FieldVisit.id.desc()).all())
+    staff_calls = (CallLog.query.filter_by(staff_id=current_user.id)
+                   .options(selectinload(CallLog.business))
+                   .order_by(CallLog.call_date.desc(), CallLog.id.desc()).all())
+    
     return render_template(
         "staff/visits.html",
         visits=staff_visits,

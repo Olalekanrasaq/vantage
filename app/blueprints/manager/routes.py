@@ -857,17 +857,20 @@ def field_visits():
     calls_page = request.args.get('calls_page', 1, type=int)
     
     # 1. Fetch Field Visits
-    visits = FieldVisit.query.filter_by(manager_id=current_user.id)\
-        .order_by(FieldVisit.visit_date.desc())\
-        .paginate(page=page, per_page=10, error_out=False)
+    visits = (FieldVisit.query
+        .filter_by(manager_id=current_user.id)
+        .options(selectinload(FieldVisit.business), selectinload(FieldVisit.staff))
+        .order_by(FieldVisit.visit_date.desc(), FieldVisit.id.desc())
+        .paginate(page=page, per_page=10, error_out=False))
         
     # 2. Fetch Call Logs (Past two days only)
     two_days_ago = date.today() - timedelta(days=2)
-    calls = CallLog.query.filter(
-        CallLog.manager_id == current_user.id,
-        CallLog.call_date >= two_days_ago
-    ).order_by(CallLog.call_date.desc())\
-    .paginate(page=calls_page, per_page=10, error_out=False)
+    calls = (CallLog.query
+        .filter(CallLog.manager_id == current_user.id,
+                CallLog.call_date >= two_days_ago)
+        .options(selectinload(CallLog.business), selectinload(CallLog.staff))
+        .order_by(CallLog.call_date.desc(), CallLog.id.desc())
+        .paginate(page=calls_page, per_page=10, error_out=False))
         
     return render_template("manager/field_visits.html", visits=visits, calls=calls)
 

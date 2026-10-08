@@ -14,7 +14,7 @@
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
     
     <!-- Log Visit Form Card -->
-    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 h-fit" x-data="{ open: false }">
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 h-fit" x-data="{ open: false, saving: false }">
         <button @click="open = !open" class="w-full flex items-center justify-between font-semibold text-sm text-brand-900">
             <span class="flex items-center gap-2">
                 <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -23,7 +23,7 @@
             <svg :class="open ? 'rotate-180' : ''" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
 
-        <form method="POST" enctype="multipart/form-data" x-show="open" x-cloak class="space-y-4 pt-4 mt-4 border-t border-gray-50">
+        <form method="POST" enctype="multipart/form-data" x-show="open" x-cloak @submit="saving = true" class="space-y-4 pt-4 mt-4 border-t border-gray-50">
             <input type="hidden" name="log_type" value="visit">
             
             <div>
@@ -70,7 +70,7 @@
 
             <div>
                 <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Visit Picture / Proof</label>
-                <input type="file" name="visit_image" accept="image/*" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none" />
+                <input type="file" name="visit_image" accept="image/*" required onchange="shrinkImage(this)" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none" />
             </div>
 
             <div>
@@ -78,8 +78,10 @@
                 <input type="date" name="next_follow_up" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
 
-            <button type="submit" class="w-full bg-brand-900 text-white rounded-xl py-3 text-sm font-semibold hover:bg-brand-700 transition">
-                Save Field Visit Record
+            <button type="submit" :disabled="saving"
+                    class="w-full bg-brand-900 text-white rounded-xl py-3 text-sm font-semibold hover:bg-brand-700 transition disabled:opacity-60">
+                <span x-show="!saving">Save Field Visit Record</span>
+                <span x-show="saving" x-cloak>Saving...</span>
             </button>
         </form>
     </div>
@@ -174,7 +176,7 @@
                 
                 {% if visit.image_filename %}
                 <div class="mt-2 pt-2 border-t border-gray-50">
-                    <a href="{{ url_for('static', filename='uploads/visits/' + visit.image_filename) }}" target="_blank" class="inline-flex items-center text-xs text-blue-600 font-medium hover:underline">
+                    <a href="{{ photo_url(visit.image_filename) }}" target="_blank" rel="noopener" class="inline-flex items-center text-xs text-blue-600 font-medium hover:underline">
                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                         View Proof Image
                     </a>
@@ -214,4 +216,24 @@
         </div>
     </div>
 </div>
+
+<script>
+async function shrinkImage(input) {
+  const f = input.files[0];
+  if (!f || !f.type.startsWith('image/')) return;
+  try {
+    const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
+    if (!blob) return;
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], f.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }));
+    input.files = dt.files;
+  } catch (e) { /* fall back to the original; the server resizes it anyway */ }
+}
+</script>
 {% endblock %}

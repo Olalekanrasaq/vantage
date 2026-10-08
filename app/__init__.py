@@ -6,6 +6,7 @@ from app.extensions import db, login_manager, migrate, scheduler
 from app.profiler import init_query_profiler
 from app.models import SuperAdmin, BusinessManager, Staff
 from app.services.reminder_service import send_grace_reminders, send_missing_report_alerts
+from app.services.storage_service import photo_url
 
 from sqlalchemy.orm import joinedload, selectinload
 from app.models import SuperAdmin, BusinessManager, Staff, StaffBusinessAssignment
@@ -18,6 +19,7 @@ def create_app(config_name=None):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
     app.permanent_session_lifetime = timedelta(minutes=20)
+    app.jinja_env.globals["photo_url"] = photo_url
 
     # ── Initialise extensions ─────────────────────────────────────────────────
     db.init_app(app)
