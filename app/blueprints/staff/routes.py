@@ -6,7 +6,7 @@ from functools import wraps
 from app.blueprints.staff import staff_bp
 from app.extensions import db
 from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask, FieldVisit, Business, CallLog
-from app.blueprints.manager.routes import _get_dashboard_tables, TABLE_FRAGMENTS, _fragment
+from app.blueprints.manager.routes import _get_dashboard_tables, _get_dashboard_metrics, TABLE_FRAGMENTS, _fragment
 from sqlalchemy.orm import selectinload
 from app.services.storage_service import upload_visit_photo, delete_photo, ImageError
 
@@ -24,7 +24,6 @@ def staff_required(f):
         return f(*args, **kwargs)
     return decorated
 
-
 @staff_bp.route("/dashboard")
 @login_required
 @staff_required
@@ -35,7 +34,8 @@ def dashboard():
     date_2_days_ago = today - timedelta(days=3)
 
     manager_id = current_user.manager_id
-    assigned_names = [b.name for b in current_user.assigned_businesses]
+    assigned = current_user.assigned_businesses          # read once
+    assigned_names = [b.name for b in assigned]
 
     weekly_page = request.args.get('weekly_page', 1, type=int)
     ntt_page = request.args.get('ntt_page', 1, type=int)
@@ -54,93 +54,26 @@ def dashboard():
         return _fragment(template, weekly_not_met=weekly_not_met,
                          ntt_list=ntt_list, retention_list=retention_list)
 
-    # Fetch recovery tasks assigned to this staff member
     assigned_tasks = RecoveryTask.query.filter_by(
-        staff_id=current_user.id,
-        is_cleared=False
+        staff_id=current_user.id, is_cleared=False
     ).order_by(RecoveryTask.created_at.desc()).all()
 
-    # Recompute metrics filtered to staff's businesses only
-    def _filter_metrics():
-        nonlocal todays_report_date, yesterdays_report_date
-
-        def count_met(model, r_date, target):
-            rows = model.query.filter_by(manager_id=manager_id, report_date=r_date).filter(
-                model.business_name.in_(assigned_names)
-            ).all()
-            total = len(set(r.business_name for r in rows))
-            met = sum(1 for r in rows if int(r.payment_value) >= target)
-            return total, met
-
-        def ntt_count(r_date):
-            return NTTReport.query.filter_by(
-                manager_id=manager_id, report_date=r_date
-            ).filter(NTTReport.business_name.in_(assigned_names)).count()
-
-        def ret_count(r_date):
-            return RetentionReport.query.filter_by(
-                manager_id=manager_id, report_date=r_date
-            ).filter(RetentionReport.business_name.in_(assigned_names)).count()
-
-        def pend_count():
-            return RecoveryTask.query.filter_by(
-                manager_id=manager_id, staff_id=current_user.id, status='PENDING'
-            ).count()
-
-        def pct(part, total):
-            return round(part / total * 100, 1) if total else 0
-
-        def delta(curr, prev):
-            return curr - prev
-
-        daily_target = 14286
-        weekly_target = 100000
-        # if todays_report_date is not available, fallback to yesterdays_report_date
-        if not DailyReport.query.filter_by(manager_id=manager_id, report_date=todays_report_date).first():
-            todays_report_date = yesterdays_report_date
-            yesterdays_report_date = date_2_days_ago
-        total, daily_met = count_met(DailyReport, todays_report_date, daily_target)
-        prev_total, prev_daily_met = count_met(DailyReport, yesterdays_report_date, daily_target)
-        wk_total, wk_met = count_met(WeeklyReport, todays_report_date, weekly_target)
-        prev_wk_total, prev_wk_met = count_met(WeeklyReport, yesterdays_report_date, weekly_target)
-        ntt = ntt_count(todays_report_date)
-        prev_ntt = ntt_count(yesterdays_report_date)
-        ret = ret_count(todays_report_date)
-        prev_ret = ret_count(yesterdays_report_date)
-        pend_tasks = pend_count()
-
-        return {
-            "total_businesses": total,
-            "daily_met": daily_met,
-            "daily_met_pct": pct(daily_met, total),
-            "weekly_met": wk_met,
-            "weekly_met_pct": pct(wk_met, wk_total),
-            "weekly_not_met": wk_total - wk_met,
-            "ntt_count": ntt,
-            "ntt_pct": pct(ntt, total),
-            "retention_count": ret,
-            "pending_tasks": pend_tasks or 0,
-            "delta_total": delta(total, prev_total),
-            "delta_daily_met": delta(daily_met, prev_daily_met),
-            "delta_weekly_met": delta(wk_met, prev_wk_met),
-            "delta_ntt": delta(ntt, prev_ntt),
-            "delta_retention": delta(ret, prev_ret),
-        }
-
-    staff_metrics = _filter_metrics()
-
+    metrics = _get_dashboard_metrics(
+        manager_id, todays_report_date, yesterdays_report_date, date_2_days_ago,
+        business_names=assigned_names, staff_id=current_user.id,
+    )
     weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
         manager_id, todays_report_date, yesterdays_report_date, business_filter=assigned_names
     )
 
     return render_template(
         "staff/dashboard.html",
-        metrics=staff_metrics,
+        metrics=metrics,
         weekly_not_met=weekly_not_met,
         ntt_list=ntt_list,
         retention_list=retention_list,
-        report_date=todays_report_date,
-        assigned_businesses=current_user.assigned_businesses,
+        report_date=metrics["as_of"],
+        assigned_businesses=assigned,
         assigned_tasks=assigned_tasks,
     )
 

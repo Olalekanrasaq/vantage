@@ -3,6 +3,9 @@ from flask import render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 from flask import abort
 
+from sqlalchemy import select, func
+from sqlalchemy.orm import joinedload
+
 from app.blueprints.recovery import recovery_bp
 from app.blueprints.manager.routes import manager_required
 from app.extensions import db
@@ -13,21 +16,23 @@ from app.models import NTTReport, RetentionReport, RecoveryTask, Staff, Business
 @login_required
 @manager_required
 def center():
-    today = date.today()
-    report_date = today - timedelta(days=1)
+    # Latest NTT snapshot in one query (was max() + fetch)
+    latest = (select(func.max(NTTReport.report_date))
+              .correlate(None)
+              .where(NTTReport.manager_id == current_user.id)
+              .scalar_subquery())
+    ntt_rows = NTTReport.query.filter(
+        NTTReport.manager_id == current_user.id,
+        NTTReport.report_date == latest,
+    ).all()
+    latest_date = ntt_rows[0].report_date if ntt_rows else None
 
-    # Fetch non-transacting terminals for the manager using the latest available report date
-    latest_date = db.session.query(db.func.max(NTTReport.report_date)).filter_by(manager_id=current_user.id).scalar()
-
-    ntt_rows = []
-    if latest_date:
-        ntt_rows = NTTReport.query.filter_by(manager_id=current_user.id, report_date=latest_date).all()
-    
-    # Fetch existing active/pending recovery tasks
-    tasks = RecoveryTask.query.filter_by(
-            manager_id=current_user.id, 
-            is_cleared=False
-            ).order_by(RecoveryTask.created_at.desc()).all()
+    # Business and staff come back in the same query (no per-task lookups)
+    tasks = (RecoveryTask.query
+             .filter_by(manager_id=current_user.id, is_cleared=False)
+             .options(joinedload(RecoveryTask.business), joinedload(RecoveryTask.staff))
+             .order_by(RecoveryTask.created_at.desc())
+             .all())
     tasked_business_names = {t.business.name for t in tasks if t.status != "RESOLVED"}
 
     staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
@@ -38,9 +43,8 @@ def center():
         tasks=tasks,
         tasked_business_names=tasked_business_names,
         staffs=staffs,
-        report_date=latest_date
+        report_date=latest_date,
     )
-
 
 @recovery_bp.route("/task/create", methods=["POST"])
 @login_required
@@ -83,7 +87,7 @@ def create_task():
         business_id=business.id,
         staff_id=staff_id if staff_id else None,
         terminal_serial=terminal_serial if terminal_serial else None,
-        days_inactive=days_inactive,
+        days_inactive=days,
         priority=priority,
         status="PENDING"
     )

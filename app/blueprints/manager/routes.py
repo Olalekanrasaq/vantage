@@ -4,13 +4,14 @@ from google import genai
 from google.genai import types
 from decouple import config
 from collections import Counter
+from decimal import Decimal
 
 from datetime import date, timedelta, datetime, timezone
 from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify, session, make_response
 from flask_login import login_required, current_user, logout_user
 from flask import abort
-from functools import wraps
-from sqlalchemy import func, distinct, case, update, select
+from functools import wraps, lru_cache
+from sqlalchemy import func, distinct, case, update, select, literal_column, union_all
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
 
 from app.blueprints.manager import manager_bp
@@ -41,110 +42,126 @@ def manager_required(f):
         return f(*args, **kwargs)
     return decorated
 
-def _day_stats(model, manager_id, report_date, fallback_date, target):
-    """(distinct businesses, rows meeting target) in one aggregate query. Falls back if the date has no rows."""
-    for d in (report_date, fallback_date):
-        total, met = db.session.query(
-            func.count(distinct(model.business_name)),
-            func.coalesce(func.sum(case((model.payment_value >= target, 1), else_=0)), 0),
-        ).filter(model.manager_id == manager_id, model.report_date == d).one()
-        if total:
-            return total, int(met)
-    return 0, 0
+def _summaries(manager_id, dates, business_names=None):
+    """One round trip: {(kind, date): (rows, distinct_businesses, met)} for all four report types."""
+    kinds = (
+        ("daily", DailyReport, daily_target),
+        ("weekly", WeeklyReport, weekly_target),
+        ("ntt", NTTReport, None),
+        ("retention", RetentionReport, None),
+    )
+    parts = []
+    for kind, model, target in kinds:
+        met = (func.coalesce(func.sum(case((model.payment_value >= target, 1), else_=0)), 0)
+               if target is not None else literal_column("0"))
+        q = (select(
+                literal_column(f"'{kind}'").label("kind"),
+                model.report_date.label("d"),
+                func.count().label("n_rows"),
+                func.count(distinct(model.business_name)).label("n_biz"),
+                met.label("n_met"))
+             .where(model.manager_id == manager_id, model.report_date.in_(dates))
+             .group_by(model.report_date))
+        if business_names is not None:
+            q = q.where(model.business_name.in_(business_names))
+        parts.append(q)
+
+    out = {}
+    for kind, d, n_rows, n_biz, n_met in db.session.execute(union_all(*parts)):
+        out[(kind, d)] = (n_rows, n_biz, int(n_met))
+    return out
 
 
-def _day_count(model, manager_id, report_date, fallback_date):
-    for d in (report_date, fallback_date):
-        n = db.session.query(func.count()).select_from(model).filter(
-            model.manager_id == manager_id, model.report_date == d
-        ).scalar()
-        if n:
-            return n
-    return 0
+def _first_with_data(summ, kind, candidates):
+    col = 1 if kind in ("daily", "weekly") else 0     # distinct businesses vs raw rows
+    for d in candidates:
+        row = summ.get((kind, d))
+        if row and row[col]:
+            return d, row
+    return candidates[0], (0, 0, 0)
 
 
-def _get_dashboard_metrics(manager_id, report_date, prev_date, date_2_days_ago):
-    """Compute all dashboard metrics for a given date and its previous date."""
-    total_biz, daily_met = _day_stats(DailyReport, manager_id, report_date, prev_date, daily_target)
-    weekly_total, weekly_met = _day_stats(WeeklyReport, manager_id, report_date, prev_date, weekly_target)
-    ntt_count = _day_count(NTTReport, manager_id, report_date, prev_date)
-    retention_count = _day_count(RetentionReport, manager_id, report_date, prev_date)
-    pending_tasks = RecoveryTask.query.filter_by(manager_id=manager_id, status='PENDING').count()
+def _cur_prev(summ, kind, dates):
+    """Current = first of the two newest dates with data; previous = the next one after it."""
+    cur_d, cur = _first_with_data(summ, kind, dates[:2])
+    start = dates.index(cur_d) + 1
+    _, prev = _first_with_data(summ, kind, dates[start:start + 2])
+    return cur_d, cur, prev
 
-    prev_total, prev_daily_met = _day_stats(DailyReport, manager_id, prev_date, date_2_days_ago, daily_target)
-    prev_weekly_total, prev_weekly_met = _day_stats(WeeklyReport, manager_id, prev_date, date_2_days_ago, weekly_target)
-    prev_ntt = _day_count(NTTReport, manager_id, prev_date, date_2_days_ago)
-    prev_retention = _day_count(RetentionReport, manager_id, prev_date, date_2_days_ago)
+
+def _get_dashboard_metrics(manager_id, report_date, prev_date, date_2_days_ago,
+                           business_names=None, staff_id=None):
+    dates = [report_date, prev_date, date_2_days_ago, date_2_days_ago - timedelta(days=1)]
+    summ = _summaries(manager_id, dates, business_names)
+
+    as_of, d, pd_ = _cur_prev(summ, "daily", dates)
+    _, w, pw = _cur_prev(summ, "weekly", dates)
+    _, n, pn = _cur_prev(summ, "ntt", dates)
+    _, r, pr = _cur_prev(summ, "retention", dates)
+
+    pending_q = db.session.query(func.count()).select_from(RecoveryTask).filter(
+        RecoveryTask.manager_id == manager_id, RecoveryTask.status == 'PENDING')
+    if staff_id is not None:
+        pending_q = pending_q.filter(RecoveryTask.staff_id == staff_id)
+    pending_tasks = pending_q.scalar() or 0
 
     def pct(part, total):
         return round(part / total * 100, 1) if total else 0
 
+    total_biz, daily_met = d[1], d[2]
+    weekly_total, weekly_met = w[1], w[2]
     return {
+        "as_of": as_of,
         "total_businesses": total_biz,
         "daily_met": daily_met,
         "daily_met_pct": pct(daily_met, total_biz),
         "weekly_met": weekly_met,
         "weekly_met_pct": pct(weekly_met, weekly_total),
         "weekly_not_met": weekly_total - weekly_met,
-        "ntt_count": ntt_count,
-        "ntt_pct": pct(ntt_count, total_biz),
-        "retention_count": retention_count,
-        "pending_tasks": pending_tasks or 0,
-        "delta_total": total_biz - prev_total,
-        "delta_daily_met": daily_met - prev_daily_met,
-        "delta_weekly_met": weekly_met - prev_weekly_met,
-        "delta_ntt": ntt_count - prev_ntt,
-        "delta_retention": retention_count - prev_retention,
+        "ntt_count": n[0],
+        "ntt_pct": pct(n[0], total_biz),
+        "retention_count": r[0],
+        "pending_tasks": pending_tasks,
+        "delta_total": total_biz - pd_[1],
+        "delta_daily_met": daily_met - pd_[2],
+        "delta_weekly_met": weekly_met - pw[2],
+        "delta_ntt": n[0] - pn[0],
+        "delta_retention": r[0] - pr[0],
     }
 
-def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=None, weekly_page=1, ntt_page=1, retention_page=1, only=None):
-    """
-    Fetch the three dashboard tables with pagination.
-    """
-    weekly_target = 100000
-    
-    # Weekly not-met table
-    if not WeeklyReport.query.filter_by(manager_id=manager_id, report_date=report_date).first():
-        report_date = prev_date
-    weekly_q = WeeklyReport.query.filter_by(
-        manager_id=manager_id,
-        report_date=report_date,
-    ).filter(
-        WeeklyReport.payment_value < weekly_target
-    )
 
-    # NTT table
-    if not NTTReport.query.filter_by(manager_id=manager_id, report_date=report_date).first():
-        report_date = prev_date
-    ntt_q = NTTReport.query.filter_by(
-        manager_id=manager_id,
-        report_date=report_date,
-    )
+def _table_query(model, manager_id, report_date, prev_date, business_names=None, extra=None):
+    # Picks report_date if it has rows, else prev_date, inside the same query (no extra round trip)
+    latest = (select(func.max(model.report_date))
+              .correlate(None)
+              .where(model.manager_id == manager_id,
+                     model.report_date.in_([report_date, prev_date]))
+              .scalar_subquery())
+    q = model.query.filter(model.manager_id == manager_id, model.report_date == latest)
+    if extra is not None:
+        q = q.filter(extra)
+    if business_names is not None:
+        q = q.filter(model.business_name.in_(business_names))
+    return q
 
-    # Retention table
-    if not RetentionReport.query.filter_by(manager_id=manager_id, report_date=report_date).first():
-        report_date = prev_date
-    retention_q = RetentionReport.query.filter_by(
-        manager_id=manager_id,
-        report_date=report_date,
-    )
 
-    if business_filter is not None:
-        weekly_q = weekly_q.filter(WeeklyReport.business_name.in_(business_filter))
-        ntt_q = ntt_q.filter(NTTReport.business_name.in_(business_filter))
-        retention_q = retention_q.filter(RetentionReport.business_name.in_(business_filter))
-
-    # Paginate each query instead of using .all()
+def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=None,
+                          weekly_page=1, ntt_page=1, retention_page=1, only=None):
     weekly_not_met = ntt_list = retention_list = None
     if only in (None, "weekly"):
-        weekly_not_met = weekly_q.order_by(WeeklyReport.payment_value.desc()).paginate(page=weekly_page, per_page=10, error_out=False)
+        weekly_not_met = (_table_query(WeeklyReport, manager_id, report_date, prev_date,
+                                       business_filter, WeeklyReport.payment_value < weekly_target)
+                          .order_by(WeeklyReport.payment_value.desc(), WeeklyReport.id.desc())
+                          .paginate(page=weekly_page, per_page=10, error_out=False))
     if only in (None, "ntt"):
-        ntt_list = ntt_q.order_by(NTTReport.days_last_transact.asc()).paginate(page=ntt_page, per_page=10, error_out=False)
+        ntt_list = (_table_query(NTTReport, manager_id, report_date, prev_date, business_filter)
+                    .order_by(NTTReport.days_last_transact.asc(), NTTReport.id.desc())
+                    .paginate(page=ntt_page, per_page=10, error_out=False))
     if only in (None, "retention"):
-        retention_list = retention_q.order_by(RetentionReport.days_decline.asc()).paginate(page=retention_page, per_page=10, error_out=False)
-
+        retention_list = (_table_query(RetentionReport, manager_id, report_date, prev_date, business_filter)
+                          .order_by(RetentionReport.days_decline.asc(), RetentionReport.id.desc())
+                          .paginate(page=retention_page, per_page=10, error_out=False))
     return weekly_not_met, ntt_list, retention_list
-
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -220,7 +237,7 @@ def dashboard():
         weekly_not_met=weekly_not_met,
         ntt_list=ntt_list,
         retention_list=retention_list,
-        report_date=todays_report_date,
+        report_date=metrics["as_of"],
         staffs=staffs,
         latest_staff_reports=latest_staff_reports,
     )
@@ -797,6 +814,12 @@ def upload():
                 report_date=report_date,
                 source="manual_upload",
             )
+            old = GEMINI_MANAGER_CACHES.pop(current_user.id, None)
+            if old:
+                try:
+                    _gemini_client().caches.delete(name=old["cache_name"])
+                except Exception:
+                    pass
             flash(
                 f"Report for {report_date} processed — "
                 f"daily: {counts['daily']}, weekly: {counts['weekly']}, "
@@ -874,187 +897,165 @@ def field_visits():
         
     return render_template("manager/field_visits.html", visits=visits, calls=calls)
 
+# __ AI Analysis ___
 
-GEMINI_MANAGER_CACHES = {}
+GEMINI_MANAGER_CACHES = {}              # manager_id -> {"cache_name", "expires_at"}
+GEMINI_MODEL = "gemini-3.1-flash-lite"
+CACHE_TTL_SECONDS = 86400
+CACHE_MIN_EST_TOKENS = 32768
+MAX_PROMPT_CHARS = 2000
+
+SYSTEM_INSTRUCTION = """
+You are an elite AI Data Analyst for a business manager.
+You are answering a question based ONLY on the provided JSON data context.
+Each dataset is given as {"cols": [column names], "rows": [[values in column order], ...]}.
+Restrict database search to only the related data to make the response fast.
+
+You MUST return your response in valid JSON format exactly matching this structure:
+{
+  "text_response": "Your detailed analysis, explanations, and insights in markdown format.",
+  "has_table": boolean (true if a table is requested or useful, false otherwise),
+  "table_headers": ["Column 1", "Column 2"],
+  "table_data": [
+     ["Row 1 Data", "Row 1 Data"],
+     ["Row 2 Data", "Row 2 Data"]
+  ]
+}
+"""
+
+
+@lru_cache(maxsize=1)
+def _gemini_client():
+    return genai.Client(api_key=config("GEMINI_API_KEY").strip())
+
+
+def _json_default(o):
+    return int(o) if isinstance(o, Decimal) else str(o)
+
+
+def _table(cols, rows):
+    return {"cols": cols, "rows": [list(r) for r in rows]}
+
+
+def _build_context(manager_id):
+    today = date.today()
+    thirty_days_ago = today - timedelta(days=30)
+    seven_days_ago = today - timedelta(days=8)
+    three_days_ago = today - timedelta(days=3)
+
+    def latest(model, *cols):
+        newest = (select(func.max(model.report_date)).correlate(None)
+                  .where(model.manager_id == manager_id).scalar_subquery())
+        return db.session.execute(
+            select(*cols).where(model.manager_id == manager_id, model.report_date == newest)
+        ).all()
+
+    staff = db.session.execute(
+        select(Staff.username).where(Staff.manager_id == manager_id)).scalars().all()
+
+    daily = db.session.execute(
+        select(DailyReport.business_name, DailyReport.report_date, DailyReport.payment_value,
+               DailyReport.payment_vol, DailyReport.target_met)
+        .where(DailyReport.manager_id == manager_id, DailyReport.report_date >= seven_days_ago)
+    ).all()
+
+    weekly = db.session.execute(
+        select(WeeklyReport.business_name, WeeklyReport.report_date, WeeklyReport.payment_value,
+               WeeklyReport.payment_vol, WeeklyReport.target_met)
+        .where(WeeklyReport.manager_id == manager_id, WeeklyReport.report_date >= three_days_ago)
+    ).all()
+
+    ntt = latest(NTTReport, NTTReport.business_name, NTTReport.days_last_transact, NTTReport.report_date)
+    retention = latest(RetentionReport, RetentionReport.business_name, RetentionReport.days_decline,
+                       RetentionReport.report_date, RetentionReport.min_volume, RetentionReport.vol_meet)
+
+    visits = db.session.execute(
+        select(Business.name, FieldVisit.visit_date, FieldVisit.issue,
+               FieldVisit.action_taken, FieldVisit.result)
+        .select_from(FieldVisit).join(Business, FieldVisit.business_id == Business.id)
+        .where(Business.manager_id == manager_id, FieldVisit.visit_date >= thirty_days_ago)
+    ).all()
+
+    calls = db.session.execute(
+        select(Business.name, CallLog.call_date, CallLog.purpose,
+               CallLog.customer_response, CallLog.result)
+        .select_from(CallLog).join(Business, CallLog.business_id == Business.id)
+        .where(Business.manager_id == manager_id, CallLog.call_date >= three_days_ago)
+    ).all()
+
+    return {
+        "staff_team": staff,
+        "daily_performance_7_days": _table(["business", "date", "value", "volume", "target"], daily),
+        "weekly_performance_latest": _table(["business", "date", "value", "volume", "target_met"], weekly),
+        "field_visits_30_days": _table(["business", "date", "issues", "action", "status"], visits),
+        "call_2days": _table(["business", "date", "purposes", "response", "status"], calls),
+        "inactive_terminals_ntt_latest": _table(["business", "days_inactive", "date"], ntt),
+        "retention_review_latest": _table(
+            ["business", "days_decline", "date", "expected_vol", "actual_vol"], retention),
+    }
+
+
+def _generate(client, contents, cached=None):
+    cfg = (types.GenerateContentConfig(cached_content=cached, response_mime_type="application/json")
+           if cached else
+           types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION,
+                                       response_mime_type="application/json"))
+    return client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
+
 
 @manager_bp.route("/api/ai-analyze", methods=["POST"])
 @login_required
 @manager_required
 def ai_analyze():
-    user_prompt = request.json.get("prompt")
+    data = request.get_json(silent=True) or {}
+    user_prompt = (data.get("prompt") or "").strip()
     if not user_prompt:
         return jsonify({"error": "Prompt is required"}), 400
+    if len(user_prompt) > MAX_PROMPT_CHARS:
+        return jsonify({"error": "Your question is too long. Please shorten it."}), 400
 
     manager_id = current_user.id
-    api_key = config('GEMINI_API_KEY')
-    client = genai.Client(api_key=api_key)
-    model_name = "gemini-3.1-flash-lite"  # Using your exact specified model
-    
-    # -------------------------------------------------------------
-    # 1. Check for Active Gemini Cache (Subsequent Requests)
-    # -------------------------------------------------------------
-    active_cache = GEMINI_MANAGER_CACHES.get(manager_id)
-    if active_cache and active_cache['expires_at'] > datetime.now(timezone.utc):
+    client = _gemini_client()
+    question = f"Manager's Question:\n{user_prompt}"
+
+    # 1. Active Gemini cache (no DB work at all)
+    entry = GEMINI_MANAGER_CACHES.get(manager_id)
+    if entry and entry["expires_at"] > datetime.now(timezone.utc):
         try:
-            # Generate content using the existing cache identifier
-            response = client.models.generate_content(
-                model=model_name,
-                contents=f"Manager's Question:\n{user_prompt}",
-                config=types.GenerateContentConfig(
-                    cached_content=active_cache['cache_name'],
-                    response_mime_type="application/json"
-                )
-            )
-            return jsonify(json.loads(response.text))
+            return jsonify(json.loads(_generate(client, question, cached=entry["cache_name"]).text))
         except Exception as e:
-            print(f"Cache retrieval failed, fetching new context: {e}")
-            # If Google evicted the cache early, fall through to recreate it
+            current_app.logger.warning("Gemini cache unusable, rebuilding: %s", e)
+            GEMINI_MANAGER_CACHES.pop(manager_id, None)
 
-    # -------------------------------------------------------------
-    # 2. Cache Miss: Fetch Optimized Database Context (First Request)
-    # -------------------------------------------------------------
-    thirty_days_ago = date.today() - timedelta(days=30)
-    seven_days_ago = date.today() - timedelta(days=8)
-    three_days_ago = date.today() - timedelta(days=3)
-    
-    # 1. Staff Context
-    staffs = Staff.query.filter_by(manager_id=manager_id).all()
-    staff_data = [{"username": s.username} for s in staffs]
+    # 2. Cache miss: build context (7 queries) and generate
+    context_string = "Context Data:\n" + json.dumps(
+        _build_context(manager_id), separators=(",", ":"), default=_json_default)
 
-    # 2. Daily Reports (7 Days)
-    daily_reports = DailyReport.query.filter(
-        DailyReport.manager_id == manager_id,
-        DailyReport.report_date >= seven_days_ago
-    ).all()
-    daily_data = [{"business": r.business_name, "date": str(r.report_date), "value": int(r.payment_value), "volume": r.payment_vol, "target": r.target_met} for r in daily_reports]
-
-    # Helper function to get only the latest snapshot
-    def get_latest_data(model_class):
-        latest_date = db.session.query(db.func.max(model_class.report_date)).filter_by(manager_id=manager_id).scalar()
-        if latest_date:
-            return model_class.query.filter_by(manager_id=manager_id, report_date=latest_date).all()
-        return []
-
-    # 3. Weekly, NTT, and Retention (Latest Snapshot Only)
-    weekly_reports = WeeklyReport.query.filter(
-        WeeklyReport.manager_id == manager_id,
-        WeeklyReport.report_date >= three_days_ago
-    ).all()
-    weekly_data = [{"business": r.business_name, "date": str(r.report_date), "value": int(r.payment_value), "volume": r.payment_vol, "target_met": r.target_met} for r in weekly_reports]
-
-    ntt_reports = get_latest_data(NTTReport)
-    ntt_data = [{"business": n.business_name, "days_inactive": n.days_last_transact, "date": str(n.report_date)} for n in ntt_reports]
-
-    retention_reports = get_latest_data(RetentionReport)
-    retention_data = [{"business": n.business_name, "days_decline": n.days_decline, "date": str(n.report_date), "expected_vol": n.min_volume, "actual_vol": n.vol_meet} for n in retention_reports]
-
-    # 4. Field Visits (30 Days - useful for spotting historical issues)
-    visits = FieldVisit.query.join(Business).filter(
-        Business.manager_id == manager_id,
-        FieldVisit.visit_date >= thirty_days_ago
-    ).all()
-    visit_data = [{"business": v.business.name, "date": str(v.visit_date), "issues": v.issue, "action": v.action_taken, "status": v.result} for v in visits]
-
-    # 4. Field Visits (30 Days - useful for spotting historical issues)
-    calls = CallLog.query.join(Business).filter(
-        Business.manager_id == manager_id,
-        CallLog.call_date >= three_days_ago
-    ).all()
-    call_data = [{"business": c.business.name, "date": str(c.call_date), "purposes": c.purpose, "response": c.customer_response, "status": c.result} for c in calls]
-
-
-    # Assemble Context Data
-    context_data = {
-        "staff_team": staff_data,
-        "daily_performance_7_days": daily_data,
-        "weekly_performance_latest": weekly_data,
-        "field_visits_30_days": visit_data,
-        "call_2days": call_data,
-        "inactive_terminals_ntt_latest": ntt_data,
-        "retention_review_latest": retention_data
-    }
-
-    system_instruction = """
-    You are an elite AI Data Analyst for a business manager. 
-    You are answering a question based ONLY on the provided JSON data context. 
-    Restrict database search to only the related data to make the response fast.
-    
-    You MUST return your response in valid JSON format exactly matching this structure:
-    {
-      "text_response": "Your detailed analysis, explanations, and insights in markdown format.",
-      "has_table": boolean (true if a table is requested or useful, false otherwise),
-      "table_headers": ["Column 1", "Column 2"],
-      "table_data": [
-         ["Row 1 Data", "Row 1 Data"],
-         ["Row 2 Data", "Row 2 Data"]
-      ]
-    }
-    """
-
-    context_string = f"Context Data:\n{json.dumps(context_data)}"
-
-    # -------------------------------------------------------------
-    # 3. Handle Google SDK Caching & Generation
-    # -------------------------------------------------------------
     try:
-        token_count = client.models.count_tokens(
-            model=model_name,
-            contents=[context_string]
-        ).total_tokens
-
-        if token_count >= 32768:
+        response = None
+        if len(context_string) // 3 >= CACHE_MIN_EST_TOKENS:     # rough size estimate, no API call
             try:
-                # Attempt to create a 24-hour cache on Google's servers
                 cache = client.caches.create(
-                    model=model_name,
+                    model=GEMINI_MODEL,
                     config=types.CreateCachedContentConfig(
-                        system_instruction=system_instruction,
+                        system_instruction=SYSTEM_INSTRUCTION,
                         contents=[context_string],
-                        ttl="86400s", # 24 hours
-                        display_name=f"manager_cache_{manager_id}"
-                    )
+                        ttl=f"{CACHE_TTL_SECONDS}s",
+                        display_name=f"manager_cache_{manager_id}",
+                    ),
                 )
-                
-                # Save reference in memory
                 GEMINI_MANAGER_CACHES[manager_id] = {
-                    'cache_name': cache.name,
-                    'expires_at': datetime.now(timezone.utc) + timedelta(hours=24)
+                    "cache_name": cache.name,
+                    "expires_at": datetime.now(timezone.utc) + timedelta(seconds=CACHE_TTL_SECONDS),
                 }
-                
-                # Switch to generating from the newly created cache
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=f"Manager's Question:\n{user_prompt}",
-                    config=types.GenerateContentConfig(
-                        cached_content=cache.name,
-                        response_mime_type="application/json"
-                    )
-                )
+                response = _generate(client, question, cached=cache.name)
             except Exception as cache_err:
-                print(f"Caching failed (likely Free Tier or quota limit): {cache_err}")
-                print("Falling back to standard prompt generation...")
-                # FALLBACK: Generate without caching
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=f"{context_string}\n\nManager's Question:\n{user_prompt}",
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        response_mime_type="application/json"
-                    )
-                )
-        else:
-            # Token count is < 32k. Generate normally.
-            response = client.models.generate_content(
-                model=model_name,
-                contents=f"{context_string}\n\nManager's Question:\n{user_prompt}",
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json"
-                )
-            )
-            
-        return jsonify(json.loads(response.text))
+                current_app.logger.warning("Caching failed, using standard prompt: %s", cache_err)
 
-    except Exception as e:
-        print(f"Gemini API Error: {e}")
+        if response is None:
+            response = _generate(client, f"{context_string}\n\n{question}")
+
+        return jsonify(json.loads(response.text))
+    except Exception:
+        current_app.logger.exception("Gemini API error")
         return jsonify({"error": "Failed to generate AI response. Please try again."}), 500

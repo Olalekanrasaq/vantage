@@ -17,7 +17,7 @@ class Config:
     MONNIFY_BASE_URL = config("MONNIFY_BASE_URL")
 
      # ── Billing ───────────────────────────────────────────────────────────────
-    SUBSCRIPTION_AMOUNT = config("SUBSCRIPTION_AMOUNT", default=5000, cast=int)
+    SUBSCRIPTION_AMOUNT = config("SUBSCRIPTION_AMOUNT", default=100, cast=int)
     # SUBSCRIPTION_DAYS = config("SUBSCRIPTION_DAYS", default=30, cast=int)
     SUBSCRIPTION_MONTHS = config("SUBSCRIPTION_MONTHS", default=1, cast=int)
     APP_URL = config("APP_URL")  # e.g. https://vantage.example.com, no trailing slash
