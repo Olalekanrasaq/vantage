@@ -24,6 +24,7 @@ from app.extensions import db
 from app.models import Business, DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog
 from flask import current_app
 from app.services.mail_service import send_extraction_failure_alert
+from app.services.cache_service import bump_manager_version
 
 
 class ExtractionError(Exception):
@@ -81,6 +82,7 @@ def run_extraction(manager, pdf_bytes: bytes, report_date: date, source: str = "
                                   _retention_rows(manager, frames["retention"], source, biz_map)),
         }
         db.session.commit()
+        bump_manager_version(manager.id)
     except Exception as e:
         db.session.rollback()
         _fail(manager, report_date, f"save: {e}")  # raises

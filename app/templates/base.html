@@ -6,46 +6,19 @@
     <meta name="theme-color" content="#1e3a5f" />
     <title>{% block title %}Vantage{% endblock %}</title>
 
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            50:  "#eff6ff",
-                            100: "#dbeafe",
-                            500: "#3b82f6",
-                            600: "#2563eb",
-                            700: "#1d4ed8",
-                            900: "#1e3a5f",
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind, built ahead of time -->
+     <style>html { visibility: hidden; }</style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=asset_v) }}">
 
     <style>
-        /* Smooth transitions for mobile menu */
         [x-cloak] { display: none !important; }
-
-        /* Better tap targets on mobile */
         a, button { -webkit-tap-highlight-color: transparent; }
-
-        /* Prevent horizontal scroll */
         body { overflow-x: hidden; }
-
-        /* Scrollable tables on small screens */
         .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     </style>
 
-    <!-- Alpine.js CDN -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Alpine.js (pinned version) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 
     {% block head %}{% endblock %}
 </head>

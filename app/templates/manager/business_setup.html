@@ -1,69 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Business Setup — Vantage{% endblock %}
+{% block title %}Business Setup | Vantage{% endblock %}
 
 {% block content %}
-<!-- Alpine Wrapper: Simplified -->
-<div x-data="{ 
-    selectedBusinesses: [], 
-    selectAll: false,
-    bulkModalOpen: false,
-    unassignModalOpen: false
-}">
+{% set keep = dict(filter_args, page=pagination.page) %}
+{% set page_names = weekly_rows | map(attribute="business_name") | list %}
+
+<div x-data='{
+        selectedBusinesses: [],
+        selectAll: false,
+        allMatching: false,
+        pageNames: {{ page_names | tojson }},
+        total: {{ pagination.total }},
+        bulkModalOpen: false,
+        unassignModalOpen: false,
+        get count() { return this.allMatching ? this.total : this.selectedBusinesses.length; },
+        toggleAll() {
+            this.selectedBusinesses = this.selectAll ? [...this.pageNames] : [];
+            this.allMatching = false;
+        },
+        clearSelection() { this.selectedBusinesses = []; this.selectAll = false; this.allMatching = false; }
+     }'>
 
   <div class="mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
     <div>
       <h1 class="text-xl font-bold text-brand-900">Business Assignment</h1>
-      <p class="text-gray-500 text-sm mt-0.5">
-        Showing businesses from report date: {{ latest_date }}
-      </p>
+      <p class="text-gray-500 text-sm mt-0.5">Showing businesses from report date: {{ latest_date }}</p>
     </div>
-    
-    <!-- Bulk Action Button -->
+
+    <!-- Bulk action buttons -->
     <div class="flex gap-2 min-h-[40px]">
-        <button type="button" 
-                x-cloak
-                x-show="selectedBusinesses.length > 0" 
-                @click="bulkModalOpen = true" 
-                x-transition.opacity
-                class="bg-brand-900 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-brand-800 shadow-md transition">
-            Bulk Assign (<span x-text="selectedBusinesses.length"></span>)
-        </button>
-        <button type="button"
-                x-cloak
-                x-show="selectedBusinesses.length > 0"
-                @click="unassignModalOpen = true"
-                x-transition.opacity
-                class="bg-white text-red-600 border border-red-200 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-50 shadow-sm transition">
-            Bulk Unassign (<span x-text="selectedBusinesses.length"></span>)
-        </button>
+      <button type="button" x-cloak x-show="count > 0" @click="bulkModalOpen = true" x-transition.opacity
+              class="bg-brand-900 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-brand-700 shadow-md transition">
+        Bulk Assign (<span x-text="count"></span>)
+      </button>
+      <button type="button" x-cloak x-show="count > 0" @click="unassignModalOpen = true" x-transition.opacity
+              class="bg-white text-red-600 border border-red-200 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-50 shadow-sm transition">
+        Bulk Unassign (<span x-text="count"></span>)
+      </button>
     </div>
   </div>
 
   <!-- Filter bar -->
   <form method="GET" action="{{ url_for('manager.businesses') }}"
         class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 space-y-4">
-
-    <!-- Search & Band Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- Search -->
       <div>
-        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-          Search business name
-        </label>
-        <input type="text" name="search" value="{{ search }}"
-               placeholder="e.g. MEGAGEO CONCEPTS"
-               class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50
-                      focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Search business name</label>
+        <input type="text" name="search" value="{{ search }}" placeholder="e.g. MEGAGEO CONCEPTS"
+               class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
       </div>
-
-      <!-- Payment value band -->
       <div>
-        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-          Filter by weekly payment value
-        </label>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Filter by weekly payment value</label>
         <select name="band"
-                class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50
-                       focus:outline-none focus:ring-2 focus:ring-brand-500">
+                class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
           <option value="">All values</option>
           <option value="lt100k"    {% if band == 'lt100k'    %}selected{% endif %}>Below ₦100k</option>
           <option value="100k_500k" {% if band == '100k_500k' %}selected{% endif %}>₦100k – ₦500k</option>
@@ -74,65 +63,62 @@
       </div>
     </div>
 
-    <!-- Checkboxes -->
     <div class="space-y-2 pt-1 border-t border-gray-50">
+      {% for name, label, checked in [
+          ("ntt_only", "Show non-transacting businesses only", ntt_only),
+          ("target_met_only", "Show businesses meeting weekly target only", target_met_only),
+          ("target_not_met_only", "Show businesses not meeting weekly target only", target_not_met_only),
+          ("newly_added_only", "Show newly added businesses (Last 7 days)", newly_added_only)] %}
       <label class="flex items-center gap-3 cursor-pointer">
-        <input type="checkbox" name="ntt_only" value="1"
-               {% if ntt_only %}checked{% endif %}
+        <input type="checkbox" name="{{ name }}" value="1" {% if checked %}checked{% endif %}
                class="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
-        <span class="text-sm text-gray-700 font-medium">Show non-transacting businesses only</span>
+        <span class="text-sm text-gray-700 font-medium">{{ label }}</span>
       </label>
-
-      <label class="flex items-center gap-3 cursor-pointer">
-        <input type="checkbox" name="target_met_only" value="1"
-               {% if target_met_only %}checked{% endif %}
-               class="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
-        <span class="text-sm text-gray-700 font-medium">Show businesses meeting weekly target only</span>
-      </label>
-
-      <label class="flex items-center gap-3 cursor-pointer">
-        <input type="checkbox" name="target_not_met_only" value="1"
-               {% if target_not_met_only %}checked{% endif %}
-               class="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
-        <span class="text-sm text-gray-700 font-medium">Show businesses not meeting weekly target only</span>
-      </label>
-
-      <!-- NEWLY ADDED FILTER -->
-      <label class="flex items-center gap-3 cursor-pointer">
-        <input type="checkbox" name="newly_added_only" value="1"
-               {% if newly_added_only %}checked{% endif %}
-               class="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
-        <span class="text-sm text-gray-700 font-medium">Show newly added businesses (Last 7 days)</span>
-      </label>
+      {% endfor %}
     </div>
 
-    <!-- Buttons Row -->
     <div class="flex gap-2 pt-2">
-        <button type="submit"
-                class="flex-1 bg-brand-900 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-brand-700 transition">
-          Apply Filters
-        </button>
-        
-        <!-- Download Button -->
-        <button type="submit" name="download" value="csv"
-                class="shrink-0 bg-green-600 text-white rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2 hover:bg-green-700 transition">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-          CSV
-        </button>
+      <button type="submit"
+              class="flex-1 bg-brand-900 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-brand-700 transition">
+        Apply Filters
+      </button>
+      <button type="submit" name="download" value="csv"
+              class="shrink-0 bg-green-600 text-white rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2 hover:bg-green-700 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        CSV
+      </button>
     </div>
 
-    {% if search or band or ntt_only or target_met_only or target_not_met_only or newly_added_only %}
-    <a href="{{ url_for('manager.businesses') }}"
-       class="block text-center text-xs text-gray-400 hover:text-gray-600 transition pt-1">
+    {% if filter_args %}
+    <a href="{{ url_for('manager.businesses') }}" class="block text-center text-xs text-gray-400 hover:text-gray-600 transition pt-1">
       Clear filters
     </a>
     {% endif %}
   </form>
 
-  <!-- Results count -->
+  <!-- Count + select-all-matching banner -->
   <p class="text-xs text-gray-400 mb-3">
-    {{ weekly_rows | length }} business{{ 'es' if weekly_rows | length != 1 else '' }} found
+    {{ pagination.total }} business{{ 'es' if pagination.total != 1 else '' }} found
+    {% if pagination.pages > 1 %}· showing {{ weekly_rows | length }} on page {{ pagination.page }} of {{ pagination.pages }}{% endif %}
   </p>
+
+  <div x-cloak x-show="selectAll && total > pageNames.length"
+       class="bg-brand-50 border border-brand-100 text-brand-800 text-sm rounded-xl px-4 py-2.5 mb-3 flex flex-wrap items-center gap-2">
+    <template x-if="!allMatching">
+      <span>
+        All <strong x-text="pageNames.length"></strong> businesses on this page are selected.
+        <button type="button" @click="allMatching = true" class="font-semibold underline">
+          Select all <span x-text="total"></span> matching businesses
+        </button>
+      </span>
+    </template>
+    <template x-if="allMatching">
+      <span>
+        All <strong x-text="total"></strong> matching businesses are selected.
+        <button type="button" @click="clearSelection()" class="font-semibold underline">Clear selection</button>
+      </span>
+    </template>
+  </div>
 
   {% if not staffs %}
   <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 mb-4 text-sm text-yellow-800">
@@ -141,17 +127,15 @@
   </div>
   {% endif %}
 
-  <!-- ========================================== -->
-  <!-- DESKTOP VIEW: STANDARD TABLE               -->
-  <!-- ========================================== -->
-  <div class="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+  <!-- ===================== DESKTOP: TABLE ===================== -->
+  <div class="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
     <div class="table-scroll">
       <table class="w-full text-left text-xs">
         <thead class="bg-gray-50 text-gray-500 uppercase tracking-wide border-b border-gray-100">
           <tr>
             <th class="px-4 py-3 w-10">
-              <!-- INJECTED ARRAY DIRECTLY USING SINGLE QUOTES -->
-              <input type="checkbox" x-model="selectAll" @change='selectedBusinesses = selectAll ? {{ weekly_rows | map(attribute="business_name") | list | tojson | safe }} : []' class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 cursor-pointer">
+              <input type="checkbox" x-model="selectAll" @change="toggleAll()"
+                     class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 cursor-pointer">
             </th>
             <th class="px-4 py-3">Business</th>
             <th class="px-4 py-3">Stats</th>
@@ -163,26 +147,26 @@
           {% for row in weekly_rows %}
           {% set biz = biz_map.get(row.business_name) %}
           {% set assignments = biz.staff_assignments if biz else [] %}
+          {% set met = (row.payment_value or 0) >= 100000 %}
           <tr class="hover:bg-gray-50/50 transition">
             <td class="px-4 py-3">
-              <input type="checkbox" value="{{ row.business_name }}" x-model="selectedBusinesses" class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 cursor-pointer">
+              <input type="checkbox" value="{{ row.business_name }}" x-model="selectedBusinesses" @change="allMatching = false"
+                     class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 cursor-pointer">
             </td>
             <td class="px-4 py-3">
               <div class="font-semibold text-gray-800 max-w-[200px] truncate mb-1">{{ row.business_name }}</div>
               <span class="inline-block text-[10px] px-2 py-0.5 rounded-full font-medium
-                  {% if row.payment_value >= 2_000_000 %}bg-green-100 text-green-700
-                  {% elif row.payment_value >= 1_000_000 %}bg-blue-100 text-blue-700
-                  {% elif row.payment_value >= 500_000 %}bg-brand-100 text-brand-700
-                  {% elif row.payment_value >= 100_000 %}bg-yellow-100 text-yellow-700
-                  {% else %}bg-gray-100 text-gray-500{% endif %}">
-                  ₦{{ "{:,.0f}".format(row.payment_value or 0) }}
-              </span>
+                {% if row.payment_value >= 2_000_000 %}bg-green-100 text-green-700
+                {% elif row.payment_value >= 1_000_000 %}bg-blue-100 text-blue-700
+                {% elif row.payment_value >= 500_000 %}bg-brand-100 text-brand-700
+                {% elif row.payment_value >= 100_000 %}bg-yellow-100 text-yellow-700
+                {% else %}bg-gray-100 text-gray-500{% endif %}">₦{{ "{:,.0f}".format(row.payment_value or 0) }}</span>
             </td>
             <td class="px-4 py-3 text-gray-500 space-y-1">
               <div>Weekly Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></div>
-              <div>NTT Days: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></div>
-              <div>Target: <strong class="{% if row.payment_value >= 100000 %}text-green-600{% else %}text-red-500{% endif %}">{{ 'Met' if row.payment_value >= 100000 else 'Not Met' }}</strong></div>
-              <div class="text-brand-600 font-medium">Added: {{ row.first_seen_date.strftime('%b %d') if row.first_seen_date else '—' }}</div>
+              <div>NTT Days: <strong class="text-gray-700">{{ row.days_last_transact or '-' }}</strong></div>
+              <div>Target: <strong class="{{ 'text-green-600' if met else 'text-red-500' }}">{{ 'Met' if met else 'Not Met' }}</strong></div>
+              <div class="text-brand-600 font-medium">Added: {{ row.first_seen_date.strftime('%b %d') if row.first_seen_date else '-' }}</div>
             </td>
             <td class="px-4 py-3">
               {% if assignments %}
@@ -190,13 +174,7 @@
                 {% for a in assignments %}
                 <div class="flex items-center gap-1 bg-brand-50 text-brand-700 rounded-full px-2.5 py-1 text-[10px] font-medium border border-brand-100">
                   {{ a.staff.username }}
-                  <form method="POST" action="{{ url_for('manager.unassign_business', assignment_id=a.id) }}" class="inline">
-                    <input type="hidden" name="search" value="{{ search }}">
-                    <input type="hidden" name="band" value="{{ band }}">
-                    {% if ntt_only %}<input type="hidden" name="ntt_only" value="1">{% endif %}
-                    {% if target_met_only %}<input type="hidden" name="target_met_only" value="1">{% endif %}
-                    {% if target_not_met_only %}<input type="hidden" name="target_not_met_only" value="1">{% endif %}
-                    {% if newly_added_only %}<input type="hidden" name="newly_added_only" value="1">{% endif %}
+                  <form method="POST" action="{{ url_for('manager.unassign_business', assignment_id=a.id, **keep) }}" class="inline">
                     <button type="submit" class="ml-0.5 text-brand-400 hover:text-red-500 font-bold leading-none">×</button>
                   </form>
                 </div>
@@ -208,20 +186,12 @@
             </td>
             <td class="px-4 py-3 text-right">
               {% if staffs %}
-              <form method="POST" action="{{ url_for('manager.assign_business') }}" class="flex gap-1 justify-end">
+              <form method="POST" action="{{ url_for('manager.assign_business', **keep) }}" class="flex gap-1 justify-end">
                 <input type="hidden" name="business_name" value="{{ row.business_name }}">
-                <input type="hidden" name="search" value="{{ search }}">
-                <input type="hidden" name="band" value="{{ band }}">
-                {% if ntt_only %}<input type="hidden" name="ntt_only" value="1">{% endif %}
-                {% if target_met_only %}<input type="hidden" name="target_met_only" value="1">{% endif %}
-                {% if target_not_met_only %}<input type="hidden" name="target_not_met_only" value="1">{% endif %}
-                {% if newly_added_only %}<input type="hidden" name="newly_added_only" value="1">{% endif %}
-                
-                <select name="staff_id" class="border border-gray-200 rounded-lg px-2 py-1 text-[10px] bg-gray-50 focus:outline-none focus:ring-1 focus:ring-brand-500 max-w-[100px]">
+                <select name="staff_id" required
+                        class="border border-gray-200 rounded-lg px-2 py-1 text-[10px] bg-gray-50 focus:outline-none focus:ring-1 focus:ring-brand-500 max-w-[100px]">
                   <option value="">Assign…</option>
-                  {% for staff in staffs %}
-                  <option value="{{ staff.id }}">{{ staff.username }}</option>
-                  {% endfor %}
+                  {% for staff in staffs %}<option value="{{ staff.id }}">{{ staff.username }}</option>{% endfor %}
                 </select>
                 <button type="submit" class="bg-brand-900 text-white rounded-lg px-2 py-1 text-[10px] font-semibold hover:bg-brand-700 transition">GO</button>
               </form>
@@ -232,9 +202,7 @@
           <tr>
             <td colspan="5" class="px-4 py-12 text-center">
               <p class="text-sm text-gray-400">No businesses match your filters.</p>
-              {% if not weekly_rows and not search and not band and not ntt_only and not target_met_only and not target_not_met_only and not newly_added_only %}
-              <p class="text-xs text-gray-400 mt-1">Businesses appear here once a report has been processed.</p>
-              {% endif %}
+              {% if not filter_args %}<p class="text-xs text-gray-400 mt-1">Businesses appear here once a report has been processed.</p>{% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -243,30 +211,26 @@
     </div>
   </div>
 
-  <!-- ========================================== -->
-  <!-- MOBILE VIEW: CARDS                         -->
-  <!-- ========================================== -->
-  <div class="block md:hidden space-y-3">
-    <!-- Mobile Select All -->
+  <!-- ===================== MOBILE: CARDS ===================== -->
+  <div class="block md:hidden space-y-3 mb-4">
     {% if weekly_rows %}
-    <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 mb-2">
-      <!-- INJECTED ARRAY DIRECTLY USING SINGLE QUOTES -->
-      <input type="checkbox" x-model="selectAll" @change='selectedBusinesses = selectAll ? {{ weekly_rows | map(attribute="business_name") | list | tojson | safe }} : []' class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 w-5 h-5 cursor-pointer">
-      <span class="text-sm font-bold text-gray-700">Select All Displayed</span>
+    <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3">
+      <input type="checkbox" x-model="selectAll" @change="toggleAll()"
+             class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 w-5 h-5 cursor-pointer">
+      <span class="text-sm font-bold text-gray-700">Select all on this page</span>
     </div>
     {% endif %}
 
     {% for row in weekly_rows %}
     {% set biz = biz_map.get(row.business_name) %}
     {% set assignments = biz.staff_assignments if biz else [] %}
-
+    {% set met = (row.payment_value or 0) >= 100000 %}
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 relative pl-12">
-      <!-- Card Checkbox -->
       <div class="absolute left-4 top-4">
-        <input type="checkbox" value="{{ row.business_name }}" x-model="selectedBusinesses" class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 w-5 h-5 cursor-pointer">
+        <input type="checkbox" value="{{ row.business_name }}" x-model="selectedBusinesses" @change="allMatching = false"
+               class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 w-5 h-5 cursor-pointer">
       </div>
 
-      <!-- Business name + value badge -->
       <div class="flex items-start justify-between gap-2 mb-2">
         <p class="text-sm font-semibold text-gray-800 leading-snug">{{ row.business_name }}</p>
         <span class="text-[10px] shrink-0 px-2 py-0.5 rounded-full font-medium
@@ -274,36 +238,22 @@
           {% elif row.payment_value >= 1_000_000 %}bg-blue-100 text-blue-700
           {% elif row.payment_value >= 500_000 %}bg-brand-100 text-brand-700
           {% elif row.payment_value >= 100_000 %}bg-yellow-100 text-yellow-700
-          {% else %}bg-gray-100 text-gray-500{% endif %}">
-          ₦{{ "{:,.0f}".format(row.payment_value or 0) }}
-        </span>
+          {% else %}bg-gray-100 text-gray-500{% endif %}">₦{{ "{:,.0f}".format(row.payment_value or 0) }}</span>
       </div>
 
-      <!-- Stats row -->
       <div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 mb-3 bg-gray-50 p-2 rounded">
         <span>Weekly Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></span>
-        <span>NTT Days: <strong class="text-gray-700">{{ row.days_last_transact or '—' }}</strong></span>
-        <span>Added: <strong class="text-brand-600">{{ row.first_seen_date.strftime('%b %d') if row.first_seen_date else '—' }}</strong></span>
-        <span>Target:
-          <strong class="{% if row.payment_value >= 100000 %}text-green-600{% else %}text-red-500{% endif %}">
-            {{ 'Met' if row.payment_value >= 100000 else 'Not Met' }}
-          </strong>
-        </span>
+        <span>NTT Days: <strong class="text-gray-700">{{ row.days_last_transact or '-' }}</strong></span>
+        <span>Added: <strong class="text-brand-600">{{ row.first_seen_date.strftime('%b %d') if row.first_seen_date else '-' }}</strong></span>
+        <span>Target: <strong class="{{ 'text-green-600' if met else 'text-red-500' }}">{{ 'Met' if met else 'Not Met' }}</strong></span>
       </div>
 
-      <!-- Current assignments -->
       {% if assignments %}
       <div class="flex flex-wrap gap-1.5 mb-3">
         {% for a in assignments %}
         <div class="flex items-center gap-1 bg-brand-50 text-brand-700 rounded-full px-2.5 py-1 text-xs font-medium border border-brand-100">
           {{ a.staff.username }}
-          <form method="POST" action="{{ url_for('manager.unassign_business', assignment_id=a.id) }}" class="inline">
-            <input type="hidden" name="search" value="{{ search }}">
-            <input type="hidden" name="band" value="{{ band }}">
-            {% if ntt_only %}<input type="hidden" name="ntt_only" value="1">{% endif %}
-            {% if target_met_only %}<input type="hidden" name="target_met_only" value="1">{% endif %}
-            {% if target_not_met_only %}<input type="hidden" name="target_not_met_only" value="1">{% endif %}
-            {% if newly_added_only %}<input type="hidden" name="newly_added_only" value="1">{% endif %}
+          <form method="POST" action="{{ url_for('manager.unassign_business', assignment_id=a.id, **keep) }}" class="inline">
             <button type="submit" class="ml-0.5 text-brand-400 hover:text-red-500 font-bold leading-none">×</button>
           </form>
         </div>
@@ -311,113 +261,113 @@
       </div>
       {% endif %}
 
-      <!-- Assign form -->
       {% if staffs %}
-      <form method="POST" action="{{ url_for('manager.assign_business') }}" class="flex gap-2">
+      <form method="POST" action="{{ url_for('manager.assign_business', **keep) }}" class="flex gap-2">
         <input type="hidden" name="business_name" value="{{ row.business_name }}">
-        <input type="hidden" name="search" value="{{ search }}">
-        <input type="hidden" name="band" value="{{ band }}">
-        {% if ntt_only %}<input type="hidden" name="ntt_only" value="1">{% endif %}
-        {% if target_met_only %}<input type="hidden" name="target_met_only" value="1">{% endif %}
-        {% if target_not_met_only %}<input type="hidden" name="target_not_met_only" value="1">{% endif %}
-        {% if newly_added_only %}<input type="hidden" name="newly_added_only" value="1">{% endif %}
-        
-        <select name="staff_id" class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+        <select name="staff_id" required
+                class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
           <option value="">Assign to…</option>
-          {% for staff in staffs %}
-          <option value="{{ staff.id }}">{{ staff.username }}</option>
-          {% endfor %}
+          {% for staff in staffs %}<option value="{{ staff.id }}">{{ staff.username }}</option>{% endfor %}
         </select>
-        <button type="submit" class="shrink-0 bg-brand-900 text-white rounded-xl px-4 py-2 text-xs font-semibold hover:bg-brand-700 transition">
-          Assign
-        </button>
+        <button type="submit" class="shrink-0 bg-brand-900 text-white rounded-xl px-4 py-2 text-xs font-semibold hover:bg-brand-700 transition">Assign</button>
       </form>
       {% endif %}
     </div>
     {% else %}
-    <!-- Mobile Empty State -->
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
       <p class="text-sm text-gray-400">No businesses match your filters.</p>
     </div>
     {% endfor %}
   </div>
 
-  <!-- ========================================== -->
-  <!-- BULK ASSIGNMENT MODAL                      -->
-  <!-- ========================================== -->
-  <div x-show="bulkModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" style="display: none;" x-transition x-cloak>
-      <div @click.away="bulkModalOpen = false" class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-          <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h3 class="font-bold text-gray-800">Bulk Assign Businesses</h3>
-              <button type="button" @click="bulkModalOpen = false" class="text-gray-400 hover:text-gray-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-          </div>
-          
-          <form method="POST" action="{{ url_for('manager.assign_business_bulk') }}" class="p-6">
-              <!-- Preserve Filters in POST -->
-              <input type="hidden" name="search" value="{{ search }}">
-              <input type="hidden" name="band" value="{{ band }}">
-              {% if ntt_only %}<input type="hidden" name="ntt_only" value="1">{% endif %}
-              {% if target_met_only %}<input type="hidden" name="target_met_only" value="1">{% endif %}
-              {% if target_not_met_only %}<input type="hidden" name="target_not_met_only" value="1">{% endif %}
-              {% if newly_added_only %}<input type="hidden" name="newly_added_only" value="1">{% endif %}
+  <!-- ===================== PAGINATION ===================== -->
+  {% if pagination.pages > 1 %}
+  <div class="flex items-center justify-between text-sm mb-6">
+    {% if pagination.has_prev %}
+    <a href="{{ url_for('manager.businesses', page=pagination.prev_num, **filter_args) }}"
+       class="px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 font-medium">← Previous</a>
+    {% else %}
+    <span class="px-4 py-2 rounded-xl border border-gray-100 text-gray-300 font-medium">← Previous</span>
+    {% endif %}
 
-              <!-- Inject selected business names dynamically via Alpine -->
-              <template x-for="name in selectedBusinesses">
-                  <input type="hidden" name="business_names" :value="name">
-              </template>
+    <span class="text-gray-500">Page {{ pagination.page }} of {{ pagination.pages }}</span>
 
-              <div class="mb-5 bg-brand-50 text-brand-800 text-sm p-3 rounded-lg border border-brand-100">
-                  You are about to assign <strong x-text="selectedBusinesses.length"></strong> businesses.<br>
-                  Select one or more staff members below. If multiple are selected, businesses will be distributed evenly.
-              </div>
-
-              <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Select Staff</label>
-              <div class="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-xl p-3 mb-6">
-                  {% for staff in staffs %}
-                  <label class="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition">
-                      <input type="checkbox" name="staff_ids" value="{{ staff.id }}" class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 w-4 h-4 cursor-pointer">
-                      <span class="block text-sm font-semibold text-gray-800">{{ staff.full_name or staff.username }}</span>
-                  </label>
-                  {% else %}
-                  <div class="text-sm text-gray-400 p-2 text-center">No active staff members found.</div>
-                  {% endfor %}
-              </div>
-
-              <div class="flex gap-3 justify-end">
-                  <button type="button" @click="bulkModalOpen = false" class="px-5 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
-                  <button type="submit" class="px-5 py-2.5 text-sm font-semibold text-white bg-brand-900 hover:bg-brand-700 rounded-xl shadow transition">Confirm Assignment</button>
-              </div>
-          </form>
-      </div>
+    {% if pagination.has_next %}
+    <a href="{{ url_for('manager.businesses', page=pagination.next_num, **filter_args) }}"
+       class="px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 font-medium">Next →</a>
+    {% else %}
+    <span class="px-4 py-2 rounded-xl border border-gray-100 text-gray-300 font-medium">Next →</span>
+    {% endif %}
   </div>
-  <!-- BULK UNASSIGN MODAL -->
-  <div x-show="unassignModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" style="display: none;" x-transition x-cloak>
-      <div @click.away="unassignModalOpen = false" class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-          <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
-              <h3 class="font-bold text-gray-800">Unassign Businesses</h3>
-          </div>
-          <form method="POST" action="{{ url_for('manager.unassign_business_bulk') }}" class="p-6">
-              <input type="hidden" name="search" value="{{ search }}">
-              <input type="hidden" name="band" value="{{ band }}">
-              {% if ntt_only %}<input type="hidden" name="ntt_only" value="1">{% endif %}
-              {% if target_met_only %}<input type="hidden" name="target_met_only" value="1">{% endif %}
-              {% if target_not_met_only %}<input type="hidden" name="target_not_met_only" value="1">{% endif %}
-              {% if newly_added_only %}<input type="hidden" name="newly_added_only" value="1">{% endif %}
+  {% endif %}
 
-              <template x-for="name in selectedBusinesses">
-                  <input type="hidden" name="business_names" :value="name">
-              </template>
-
-              <p class="text-sm text-gray-600 mb-6">
-                  Remove the staff assignment from <strong x-text="selectedBusinesses.length"></strong> selected businesses?
-                  Businesses that aren't assigned are ignored.
-              </p>
-              <div class="flex gap-3 justify-end">
-                  <button type="button" @click="unassignModalOpen = false" class="px-5 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
-                  <button type="submit" class="px-5 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow transition">Unassign</button>
-              </div>
-          </form>
+  <!-- ===================== BULK ASSIGN MODAL ===================== -->
+  <div x-show="bulkModalOpen" x-cloak x-transition style="display: none;"
+       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+    <div @click.away="bulkModalOpen = false" class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+        <h3 class="font-bold text-gray-800">Bulk Assign Businesses</h3>
+        <button type="button" @click="bulkModalOpen = false" class="text-gray-400 hover:text-gray-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
       </div>
+
+      <form method="POST" action="{{ url_for('manager.assign_business_bulk') }}" class="p-6">
+        {% for k, v in keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        <input type="hidden" name="all_matching" value="1" :disabled="!allMatching">
+        <template x-for="name in selectedBusinesses">
+          <input type="hidden" name="business_names" :value="name" :disabled="allMatching">
+        </template>
+
+        <div class="mb-5 bg-brand-50 text-brand-800 text-sm p-3 rounded-lg border border-brand-100">
+          You are about to assign <strong x-text="count"></strong> businesses.<br>
+          Select one or more staff members below. If multiple are selected, businesses will be distributed evenly.
+        </div>
+
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Select Staff</label>
+        <div class="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-xl p-3 mb-6">
+          {% for staff in staffs %}
+          <label class="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition">
+            <input type="checkbox" name="staff_ids" value="{{ staff.id }}" class="rounded text-brand-600 focus:ring-brand-500 border-gray-300 w-4 h-4 cursor-pointer">
+            <span class="block text-sm font-semibold text-gray-800">{{ staff.full_name or staff.username }}</span>
+          </label>
+          {% else %}
+          <div class="text-sm text-gray-400 p-2 text-center">No active staff members found.</div>
+          {% endfor %}
+        </div>
+
+        <div class="flex gap-3 justify-end">
+          <button type="button" @click="bulkModalOpen = false" class="px-5 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
+          <button type="submit" class="px-5 py-2.5 text-sm font-semibold text-white bg-brand-900 hover:bg-brand-700 rounded-xl shadow transition">Confirm Assignment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== BULK UNASSIGN MODAL ===================== -->
+  <div x-show="unassignModalOpen" x-cloak x-transition style="display: none;"
+       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+    <div @click.away="unassignModalOpen = false" class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+        <h3 class="font-bold text-gray-800">Unassign Businesses</h3>
+      </div>
+      <form method="POST" action="{{ url_for('manager.unassign_business_bulk') }}" class="p-6">
+        {% for k, v in keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        <input type="hidden" name="all_matching" value="1" :disabled="!allMatching">
+        <template x-for="name in selectedBusinesses">
+          <input type="hidden" name="business_names" :value="name" :disabled="allMatching">
+        </template>
+
+        <p class="text-sm text-gray-600 mb-6">
+          Remove the staff assignment from <strong x-text="count"></strong> selected businesses?
+          Businesses that aren't assigned are ignored.
+        </p>
+        <div class="flex gap-3 justify-end">
+          <button type="button" @click="unassignModalOpen = false" class="px-5 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
+          <button type="submit" class="px-5 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow transition">Unassign</button>
+        </div>
+      </form>
+    </div>
   </div>
 
 </div>

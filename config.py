@@ -5,10 +5,23 @@ from decouple import config
 class Config:
     # ── Flask ─────────────────────────────────────────────────────────────────
     SECRET_KEY = config("SECRET_KEY")
-    
+    BEHIND_PROXY = False
+    RUN_SCHEDULER_IN_APP = False
+
     # ── Database ──────────────────────────────────────────────────────────────
     SQLALCHEMY_DATABASE_URI = config("DATABASE_URL")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # ── Redis / rate limiting ─────────────────────────────────────────────────
+    REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+    RATELIMIT_STORAGE_URI = REDIS_URL
+    RATELIMIT_SWALLOW_ERRORS = True          # a Redis outage must not block logins
+
+    # ── Sessions / cookies ────────────────────────────────────────────────────
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SAMESITE = "Lax"
 
     # ── Monnify ───────────────────────────────────────────────────────────────
     MONNIFY_API_KEY = config("MONNIFY_API_KEY")
@@ -16,9 +29,8 @@ class Config:
     MONNIFY_CONTRACT_CODE = config("MONNIFY_CONTRACT_CODE")
     MONNIFY_BASE_URL = config("MONNIFY_BASE_URL")
 
-     # ── Billing ───────────────────────────────────────────────────────────────
+    # ── Billing ───────────────────────────────────────────────────────────────
     SUBSCRIPTION_AMOUNT = config("SUBSCRIPTION_AMOUNT", default=100, cast=int)
-    # SUBSCRIPTION_DAYS = config("SUBSCRIPTION_DAYS", default=30, cast=int)
     SUBSCRIPTION_MONTHS = config("SUBSCRIPTION_MONTHS", default=1, cast=int)
     APP_URL = config("APP_URL")  # e.g. https://vantage.example.com, no trailing slash
     GRACE_DAYS = 5
@@ -38,19 +50,34 @@ class Config:
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "app", "static", "uploads")
     ALLOWED_EXTENSIONS = {"pdf"}
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
-    MAX_CONTENT_LENGTH = 12 * 1024 * 1024  # 12MB max upload
-    S3_BUCKET = "cocosurf-gear-miami"
-    AWS_REGION = "us-east-1"   # use your bucket's region
+    MAX_CONTENT_LENGTH = 12 * 1024 * 1024    # 12MB max upload
+    MAX_FORM_PARTS = 5000                    # bulk assign/unassign forms (Flask 3.1+)
 
-    # Werkzeug form parts
-    MAX_FORM_PARTS = 5000
+    # ── S3 ────────────────────────────────────────────────────────────────────
+    S3_BUCKET = config("S3_BUCKET")
+    AWS_REGION = config("AWS_REGION", default="us-east-1")
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    RUN_SCHEDULER_IN_APP = True              # python run.py keeps the scheduler as today
+    RATELIMIT_STORAGE_URI = "memory://"      # no Redis needed just for rate limits in dev
 
 
 class ProductionConfig(Config):
     DEBUG = False
+    BEHIND_PROXY = True
+    PREFERRED_URL_SCHEME = "https"
+    SESSION_COOKIE_SECURE = config("COOKIE_SECURE", default=True, cast=bool)
+    REMEMBER_COOKIE_SECURE = config("COOKIE_SECURE", default=True, cast=bool)
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_size": 4,             # one per gunicorn thread
+        "max_overflow": 2,
+        "pool_timeout": 10,
+        "pool_pre_ping": True,      # drop dead connections after a DB restart
+        "pool_recycle": 1800,
+        "connect_args": {"options": "-c statement_timeout=30000"},  # kill queries over 30s
+    }
 
 
 config = {

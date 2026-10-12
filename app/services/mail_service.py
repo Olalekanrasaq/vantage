@@ -41,7 +41,7 @@ def _send(to: str, subject: str, html: str):
 def send_missing_report_alert(manager, report_date: date):
     _send(
         to=manager.email,
-        subject=f"[Vantage] Report not uploaded for {report_date}",
+        subject=f"Report not uploaded for {report_date}",
         html=f"""
         <p>Hi there,</p>
         <p>Your report for <strong>{report_date}</strong> has not been uploaded yet.</p>
@@ -55,7 +55,7 @@ def send_missing_report_alert(manager, report_date: date):
 def send_payment_confirmation(manager, amount: str, payment_type: str):
     _send(
         to=manager.email,
-        subject="[Vantage] Payment confirmed",
+        subject="Payment confirmed",
         html=f"""
         <p>Hi there,</p>
         <p>Your payment of <strong>{amount}</strong> for Vantage Subscription has been confirmed.
@@ -83,7 +83,7 @@ def send_extraction_failure_alert(manager, report_date: date, error: str):
 def send_grace_period_reminder(manager, due_date, grace_ends, days_left: int):
     _send(
         to=manager.email,
-        subject=f"[Vantage] Payment overdue: {days_left} day(s) left to renew",
+        subject=f"Payment overdue: {days_left} day(s) left to renew",
         html=f"""
         <p>Hi there,</p>
         <p>Your Vantage subscription was due on <strong>{due_date:%d %b %Y}</strong>.
@@ -91,6 +91,20 @@ def send_grace_period_reminder(manager, due_date, grace_ends, days_left: int):
         <strong>{grace_ends:%d %b %Y}</strong> ({days_left} day(s) left).</p>
         <p>Renew now at <a href="{current_app.config.get('APP_URL', '')}/payment/subscribe">your payment page</a>.
         Your next due date stays the same whether you pay today or on the last day of grace.</p>
+        <p>The Vantage Team</p>
+        """,
+    )
+
+def send_password_reset(manager, reset_url: str):
+    _send(
+        to=manager.email,
+        subject="Reset your password",
+        html=f"""
+        <p>Hi there,</p>
+        <p>We received a request to reset your Vantage password.</p>
+        <p><a href="{reset_url}">Reset your password</a></p>
+        <p>This link expires in 1 hour and can only be used once.
+        If you didn't request this, you can ignore this email; your password won't change.</p>
         <p>The Vantage Team</p>
         """,
     )

@@ -1,4 +1,6 @@
 import os
+import csv
+import io
 import json
 from google import genai
 from google.genai import types
@@ -22,6 +24,7 @@ from app.models import (
     StaffActivityReport, RecoveryTask, FieldVisit, CallLog
 )
 from app.services.extraction_service import run_extraction, ExtractionError
+from app.services.cache_service import cached, freeze_page, bump_manager_version
 
 daily_target = 14286
 weekly_target = 100000
@@ -163,6 +166,18 @@ def _get_dashboard_tables(manager_id, report_date, prev_date, business_filter=No
                           .paginate(page=retention_page, per_page=10, error_out=False))
     return weekly_not_met, ntt_list, retention_list
 
+TABLE_VARS = {"weekly": "weekly_not_met", "ntt": "ntt_list", "retention": "retention_list"}
+TABLE_INDEX = {"weekly": 0, "ntt": 1, "retention": 2}
+
+def _cached_table(kind, manager_id, report_date, prev_date, page, business_filter=None, scope="m"):
+    """One page of one dashboard table, from cache when possible."""
+    def compute():
+        tables = _get_dashboard_tables(
+            manager_id, report_date, prev_date, business_filter=business_filter,
+            only=kind, **{f"{kind}_page": page})
+        return freeze_page(tables[TABLE_INDEX[kind]])
+    return cached(manager_id, (scope, kind, page), compute)
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 def _latest_staff_reports(manager_id, page):
@@ -207,39 +222,36 @@ def dashboard():
     date_2_days_ago = today - timedelta(days=3)
 
     # AJAX pagination: compute and render only the table that was clicked
+    mid = current_user.id
+    pages = {"weekly": weekly_page, "ntt": ntt_page, "retention": retention_page}
+
+    # AJAX pagination: one table, from cache
     target = request.headers.get("X-Requested-Table")
     if target == "staff-table-content":
         return _fragment("partials/staff_table.html",
-                         latest_staff_reports=_latest_staff_reports(current_user.id, staff_page))
+                         latest_staff_reports=_latest_staff_reports(mid, staff_page))
     if target in TABLE_FRAGMENTS:
         only, template = TABLE_FRAGMENTS[target]
-        weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
-            current_user.id, todays_report_date, yesterdays_report_date,
-            weekly_page=weekly_page, ntt_page=ntt_page, retention_page=retention_page, only=only
-        )
-        return _fragment(template, weekly_not_met=weekly_not_met,
-                         ntt_list=ntt_list, retention_list=retention_list)
+        ctx = dict.fromkeys(TABLE_VARS.values())
+        ctx[TABLE_VARS[only]] = _cached_table(only, mid, todays_report_date, yesterdays_report_date, pages[only])
+        return _fragment(template, **ctx)
 
     # Full page
-    metrics = _get_dashboard_metrics(
-        current_user.id, todays_report_date, yesterdays_report_date, date_2_days_ago
-    )
-    weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
-        current_user.id, todays_report_date, yesterdays_report_date,
-        weekly_page=weekly_page, ntt_page=ntt_page, retention_page=retention_page
-    )
-    staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).options(staff_loader).all()
-    latest_staff_reports = _latest_staff_reports(current_user.id, staff_page)
+    metrics = cached(mid, ("m", "metrics"), lambda: _get_dashboard_metrics(
+        mid, todays_report_date, yesterdays_report_date, date_2_days_ago))
+    tables = {TABLE_VARS[k]: _cached_table(k, mid, todays_report_date, yesterdays_report_date, pages[k])
+              for k in TABLE_VARS}
+
+    staffs = Staff.query.filter_by(manager_id=mid, is_active=True).options(staff_loader).all()
+    latest_staff_reports = _latest_staff_reports(mid, staff_page)
 
     return render_template(
         "manager/dashboard.html",
         metrics=metrics,
-        weekly_not_met=weekly_not_met,
-        ntt_list=ntt_list,
-        retention_list=retention_list,
         report_date=metrics["as_of"],
         staffs=staffs,
         latest_staff_reports=latest_staff_reports,
+        **tables,
     )
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
@@ -396,7 +408,6 @@ def delete_staff(staff_id):
     flash(f"Staff member '{username}' has been deleted.", "success")
     return redirect(url_for("manager.staffs"))
 
-
 # ── Business assignment ───────────────────────────────────────────────────────
 
 PAYMENT_BANDS = {
@@ -408,131 +419,146 @@ PAYMENT_BANDS = {
 }
 
 BULK_FILTER_KEYS = ("search", "band", "ntt_only", "target_met_only", "target_not_met_only", "newly_added_only")
+BUSINESSES_PER_PAGE = 10
+
 
 def _preserve_filters():
-    """Carry search/filter params back to the businesses page after POST."""
+    """Carry search/filter params (and the page) back to the businesses page after POST."""
     params = []
-    # Added the new filters to the preserved list
-    for key in ("search", "band", "ntt_only", "target_met_only", "target_not_met_only", "newly_added_only"): 
+    for key in BULK_FILTER_KEYS + ("page",):
         val = request.form.get(key) or request.args.get(key, "")
         if val:
             params.append(f"{key}={val}")
     return ("?" + "&".join(params)) if params else ""
 
 
+def _business_filters(src):
+    """Filter values from request.args (GET) or request.form (POST)."""
+    return {k: (src.get(k) or "").strip() for k in BULK_FILTER_KEYS}
+
+
+def _filtered_weekly_query(manager_id, f):
+    """The businesses-page query with every filter applied. Returns (query, latest_date).
+    Rows are (WeeklyReport, first_seen_date)."""
+    today = date.today()
+    latest_date = today - timedelta(days=1)
+    if not db.session.query(WeeklyReport.id).filter_by(manager_id=manager_id, report_date=latest_date).first():
+        latest_date = today - timedelta(days=2)
+
+    first_seen_sub = (db.session.query(
+                          WeeklyReport.business_name,
+                          func.min(WeeklyReport.report_date).label("first_seen_date"))
+                      .filter_by(manager_id=manager_id)
+                      .group_by(WeeklyReport.business_name)
+                      .subquery())
+
+    query = (db.session.query(WeeklyReport, first_seen_sub.c.first_seen_date)
+             .join(first_seen_sub, WeeklyReport.business_name == first_seen_sub.c.business_name)
+             .filter(WeeklyReport.manager_id == manager_id,
+                     WeeklyReport.report_date == latest_date))
+
+    if f["search"]:
+        query = query.filter(WeeklyReport.business_name.ilike(f"%{f['search']}%"))
+
+    if f["band"] in PAYMENT_BANDS:
+        low, high = PAYMENT_BANDS[f["band"]]
+        query = query.filter(WeeklyReport.payment_value >= low)
+        if high != float("inf"):
+            query = query.filter(WeeklyReport.payment_value < high)
+
+    if f["target_met_only"]:
+        query = query.filter(WeeklyReport.payment_value >= weekly_target)
+    elif f["target_not_met_only"]:
+        query = query.filter(WeeklyReport.payment_value < weekly_target)
+
+    if f["newly_added_only"]:
+        query = query.filter(first_seen_sub.c.first_seen_date >= today - timedelta(days=7))
+
+    if f["ntt_only"]:
+        ntt_names = select(NTTReport.business_name).where(
+            NTTReport.manager_id == manager_id, NTTReport.report_date == latest_date)
+        query = query.filter(WeeklyReport.business_name.in_(ntt_names))
+
+    query = query.order_by(WeeklyReport.payment_value.desc(), WeeklyReport.id.desc())
+    return query, latest_date
+
+
+def _selected_business_names():
+    """Names posted by a bulk form: the ticked ones, or every business matching the filters."""
+    if request.form.get("all_matching"):
+        query, _ = _filtered_weekly_query(current_user.id, _business_filters(request.form))
+        return [name for (name,) in query.with_entities(WeeklyReport.business_name).all()]
+    return request.form.getlist("business_names")
+
+
 @manager_bp.route("/businesses")
 @login_required
 @manager_required
 def businesses():
-    today = date.today()
-    latest_date = today - timedelta(days=1)
-    date_2_days_ago = today - timedelta(days=2)
-    weekly_target = 100000
+    f = _business_filters(request.args)
+    query, latest_date = _filtered_weekly_query(current_user.id, f)
 
-    search = request.args.get("search", "").strip()
-    band = request.args.get("band", "")
-    ntt_only = request.args.get("ntt_only", "")
-    target_met_only = request.args.get("target_met_only", "") 
-    target_not_met_only = request.args.get("target_not_met_only", "")
-    newly_added_only = request.args.get("newly_added_only", "") # <--- New filter
+    # ── CSV: every matching business, not just one page ───────────────────────
+    if request.args.get("download") == "csv":
+        rows = query.all()
 
-    download = request.args.get("download", "")
+        def generate_csv():
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(["Business Name", "Value (NGN)", "Volume", "Target Met", "Days Inactive", "Date Added"])
+            for report, first_seen in rows:
+                writer.writerow([
+                    report.business_name,
+                    report.payment_value or 0,
+                    report.payment_vol or 0,
+                    report.target_met or "False",
+                    report.days_last_transact or "",
+                    first_seen or "",
+                ])
+                yield buf.getvalue()
+                buf.seek(0)
+                buf.truncate(0)
 
-    if not WeeklyReport.query.filter_by(manager_id=current_user.id, report_date=latest_date).first():
-        latest_date = date_2_days_ago
+        return Response(
+            generate_csv(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment;filename=vantage_businesses_{latest_date}.csv"},
+        )
 
-    # --- SUBQUERY FOR FIRST SEEN DATE ---
-    # Find the earliest report_date for every business to determine when they were newly added
-    first_seen_sub = db.session.query(
-        WeeklyReport.business_name,
-        func.min(WeeklyReport.report_date).label('first_seen_date')
-    ).filter_by(manager_id=current_user.id).group_by(WeeklyReport.business_name).subquery()
+    # ── One page of results ───────────────────────────────────────────────────
+    page = request.args.get("page", 1, type=int)
+    pagination = query.paginate(page=page, per_page=BUSINESSES_PER_PAGE, error_out=False)
 
-    # Join the subquery to our main query
-    query = db.session.query(WeeklyReport, first_seen_sub.c.first_seen_date).join(
-        first_seen_sub, WeeklyReport.business_name == first_seen_sub.c.business_name
-    ).filter(
-        WeeklyReport.manager_id == current_user.id,
-        WeeklyReport.report_date == latest_date,
-    )
-
-    if search:
-        query = query.filter(WeeklyReport.business_name.ilike(f"%{search}%"))
-
-    if band and band in PAYMENT_BANDS:
-        low, high = PAYMENT_BANDS[band]
-        query = query.filter(WeeklyReport.payment_value >= low)
-        if high != float("inf"):
-            query = query.filter(WeeklyReport.payment_value < high)
-            
-    # Apply Target filters
-    if target_met_only:
-        query = query.filter(WeeklyReport.payment_value >= weekly_target)
-    elif target_not_met_only:
-        query = query.filter(WeeklyReport.payment_value < weekly_target)
-        
-    # Apply New Business filter (First seen within the last 7 days)
-    if newly_added_only:
-        seven_days_ago = today - timedelta(days=7)
-        query = query.filter(first_seen_sub.c.first_seen_date >= seven_days_ago)
-
-    # Fetch results
-    results = query.order_by(WeeklyReport.payment_value.desc()).all()
-    
-    # Map the first_seen_date into the report object dynamically for the template
     weekly_rows = []
-    for report, first_seen in results:
+    for report, first_seen in pagination.items:
         report.first_seen_date = first_seen
         weekly_rows.append(report)
 
-    if ntt_only:
-        ntt_names = {
-            r.business_name for r in
-            NTTReport.query.filter_by(manager_id=current_user.id, report_date=latest_date).all()
-        }
-        weekly_rows = [r for r in weekly_rows if r.business_name in ntt_names]
-        
-    # --- DOWNLOAD LOGIC ---
-    if download == "csv":
-        def generate_csv():
-            yield "Business Name,Value (NGN),Volume,Target Met,Days Inactive,Date Added\n"
-            for r in weekly_rows:
-                name = f'"{r.business_name}"' 
-                val = r.payment_value or 0
-                vol = r.payment_vol or 0
-                t_met = r.target_met or 'False'
-                days = r.days_last_transact or ''
-                date_added = r.first_seen_date or ''
-                yield f"{name},{val},{vol},{t_met},{days},{date_added}\n"
-        
-        return Response(
-            generate_csv(), 
-            mimetype="text/csv", 
-            headers={"Content-Disposition": f"attachment;filename=vantage_businesses_{latest_date}.csv"}
-        )
-
-    all_businesses = (
-        Business.query.filter_by(manager_id=current_user.id, is_active=True)
+    # Load assignments only for the businesses on this page
+    names = [r.business_name for r in weekly_rows]
+    page_businesses = (
+        Business.query
+        .filter(Business.manager_id == current_user.id,
+                Business.is_active.is_(True),
+                Business.name.in_(names))
         .options(selectinload(Business.staff_assignments)
                  .joinedload(StaffBusinessAssignment.staff))
         .all()
-    )
-    biz_map = {b.name: b for b in all_businesses}
-    all_staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
+    ) if names else []
+    biz_map = {b.name: b for b in page_businesses}
+
+    staffs = Staff.query.filter_by(manager_id=current_user.id, is_active=True).all()
 
     return render_template(
         "manager/business_setup.html",
         weekly_rows=weekly_rows,
+        pagination=pagination,
+        filter_args={k: v for k, v in f.items() if v},
         biz_map=biz_map,
-        staffs=all_staffs,
-        search=search,
-        band=band,
-        ntt_only=ntt_only,
-        target_met_only=target_met_only, 
-        target_not_met_only=target_not_met_only,
-        newly_added_only=newly_added_only, # <--- Pass to template
-        payment_bands=PAYMENT_BANDS,
+        staffs=staffs,
         latest_date=latest_date,
+        payment_bands=PAYMENT_BANDS,
+        **f,
     )
 
 @manager_bp.route("/businesses/assign", methods=["POST"])
@@ -558,6 +584,7 @@ def assign_business():
         business = Business(manager_id=current_user.id, name=business_name, is_active=True)
         db.session.add(business)
         db.session.commit() # Commit so it gets an ID
+        bump_manager_version(current_user.id)
 
     existing = StaffBusinessAssignment.query.filter_by(
         business_id=business.id
@@ -575,6 +602,7 @@ def assign_business():
     assignment = StaffBusinessAssignment(staff_id=staff_id, business_id=business.id)
     db.session.add(assignment)
     db.session.commit()
+    bump_manager_version(current_user.id)
     flash(f"'{business_name}' assigned to {staff.username}.", "success")
     return redirect(url_for("manager.businesses") + _preserve_filters())
 
@@ -588,7 +616,7 @@ def assign_business_bulk():
     """
     mode = request.form.get("mode", "check")
     staff_ids = [int(s) for s in request.form.getlist("staff_ids") if s.isdigit()]
-    names = list(dict.fromkeys(n.strip() for n in request.form.getlist("business_names") if n.strip()))
+    names = list(dict.fromkeys(n.strip() for n in _selected_business_names() if n.strip()))
     back = url_for("manager.businesses") + _preserve_filters()
 
     if not staff_ids or not names:
@@ -690,6 +718,7 @@ def assign_business_bulk():
         )
 
     db.session.commit()  # one commit for everything
+    bump_manager_version(current_user.id)
 
     staff_label = ", ".join(s.full_name or s.username for s in staffs)
     parts = [f"Assigned {added} business(es) across {staff_label}"]
@@ -713,6 +742,7 @@ def unassign_business(assignment_id):
                   .first_or_404())
     db.session.delete(assignment)
     db.session.commit()
+    bump_manager_version(current_user.id)
     flash("Business unassigned.", "info")
     return redirect(url_for("manager.businesses") + _preserve_filters())
 
@@ -721,7 +751,7 @@ def unassign_business(assignment_id):
 @manager_required
 def unassign_business_bulk():
     """Remove the assignment (whoever holds it) for every selected business."""
-    names = list(dict.fromkeys(n.strip() for n in request.form.getlist("business_names") if n.strip()))
+    names = list(dict.fromkeys(n.strip() for n in _selected_business_names() if n.strip()))
     back = url_for("manager.businesses") + _preserve_filters()
     if not names:
         flash("Select at least one business.", "error")
@@ -740,6 +770,7 @@ def unassign_business_bulk():
         StaffBusinessAssignment.id.in_([r.id for r in rows])
     ).delete(synchronize_session=False)
     db.session.commit()
+    bump_manager_version(current_user.id)
 
     by_staff = Counter(r.full_name or r.username for r in rows)
     flash(f"Unassigned {len(rows)} business(es): "
@@ -764,6 +795,7 @@ def unassign_staff_businesses(staff_id):
 
     n = q.delete(synchronize_session=False)
     db.session.commit()
+    bump_manager_version(current_user.id)
     flash(f"Unassigned {n} business(es) from {staff.full_name or staff.username}.", "success")
     return redirect(url_for("manager.staffs"))
 
@@ -778,6 +810,7 @@ def unassign_all_businesses():
             select(Staff.id).where(Staff.manager_id == current_user.id))
     ).delete(synchronize_session=False)
     db.session.commit()
+    bump_manager_version(current_user.id)
     flash(f"Unassigned {n} business(es) from all staff.", "success")
     return redirect(url_for("manager.staffs"))
 

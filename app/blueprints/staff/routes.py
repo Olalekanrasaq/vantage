@@ -1,3 +1,6 @@
+import csv
+import io
+
 from datetime import date, timedelta
 from flask import render_template, abort, redirect, url_for, flash, request, current_app, Response
 from flask_login import login_required, current_user, logout_user
@@ -6,9 +9,14 @@ from functools import wraps
 from app.blueprints.staff import staff_bp
 from app.extensions import db
 from app.models import DailyReport, WeeklyReport, NTTReport, RetentionReport, StaffActivityReport, RecoveryTask, FieldVisit, Business, CallLog
-from app.blueprints.manager.routes import _get_dashboard_tables, _get_dashboard_metrics, TABLE_FRAGMENTS, _fragment
-from sqlalchemy.orm import selectinload
+from app.blueprints.manager.routes import _get_dashboard_tables, _get_dashboard_metrics, TABLE_FRAGMENTS, _fragment, _cached_table, TABLE_VARS
+from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy import select
 from app.services.storage_service import upload_visit_photo, delete_photo, ImageError
+from app.services.cache_service import cached, freeze_page, bump_manager_version
+
+daily_target = 14286
+weekly_target = 100000
 
 def staff_required(f):
     @wraps(f)
@@ -42,39 +50,37 @@ def dashboard():
     retention_page = request.args.get('retention_page', 1, type=int)
 
     # AJAX pagination: compute and render only the clicked table
+    scope = f"s{current_user.id}"
+    pages = {"weekly": weekly_page, "ntt": ntt_page, "retention": retention_page}
+
     target = request.headers.get("X-Requested-Table")
     if target in TABLE_FRAGMENTS:
         only, template = TABLE_FRAGMENTS[target]
-        weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
-            manager_id, todays_report_date, yesterdays_report_date,
-            business_filter=assigned_names,
-            weekly_page=weekly_page, ntt_page=ntt_page, retention_page=retention_page,
-            only=only,
-        )
-        return _fragment(template, weekly_not_met=weekly_not_met,
-                         ntt_list=ntt_list, retention_list=retention_list)
+        ctx = dict.fromkeys(TABLE_VARS.values())
+        ctx[TABLE_VARS[only]] = _cached_table(only, manager_id, todays_report_date, yesterdays_report_date,
+                                              pages[only], business_filter=assigned_names, scope=scope)
+        return _fragment(template, **ctx)
 
-    assigned_tasks = RecoveryTask.query.filter_by(
-        staff_id=current_user.id, is_cleared=False
-    ).order_by(RecoveryTask.created_at.desc()).all()
+    assigned_tasks = (RecoveryTask.query
+                      .filter_by(staff_id=current_user.id, is_cleared=False)
+                      .options(joinedload(RecoveryTask.business))
+                      .order_by(RecoveryTask.created_at.desc())
+                      .all())
 
-    metrics = _get_dashboard_metrics(
+    metrics = cached(manager_id, (scope, "metrics"), lambda: _get_dashboard_metrics(
         manager_id, todays_report_date, yesterdays_report_date, date_2_days_ago,
-        business_names=assigned_names, staff_id=current_user.id,
-    )
-    weekly_not_met, ntt_list, retention_list = _get_dashboard_tables(
-        manager_id, todays_report_date, yesterdays_report_date, business_filter=assigned_names
-    )
+        business_names=assigned_names, staff_id=current_user.id))
+    tables = {TABLE_VARS[k]: _cached_table(k, manager_id, todays_report_date, yesterdays_report_date,
+                                           pages[k], business_filter=assigned_names, scope=scope)
+              for k in TABLE_VARS}
 
     return render_template(
         "staff/dashboard.html",
         metrics=metrics,
-        weekly_not_met=weekly_not_met,
-        ntt_list=ntt_list,
-        retention_list=retention_list,
         report_date=metrics["as_of"],
         assigned_businesses=assigned,
         assigned_tasks=assigned_tasks,
+        **tables,
     )
 
 @staff_bp.route("/report/submit", methods=["GET", "POST"])
@@ -262,82 +268,76 @@ def visits():
         today=today
     )
 
+STAFF_BIZ_FILTERS = ("search", "ntt_only", "target_met_only", "target_not_met_only")
+BUSINESSES_PER_PAGE = 10
+
 @staff_bp.route("/businesses")
 @login_required
 @staff_required
 def businesses():
+    f = {k: (request.args.get(k) or "").strip() for k in STAFF_BIZ_FILTERS}
+    page = request.args.get("page", 1, type=int)
+
+    manager_id = current_user.manager_id
+    assigned_names = [b.name for b in current_user.assigned_businesses]  # preloaded by load_user
+
     today = date.today()
     latest_date = today - timedelta(days=1)
-    date_2_days_ago = today - timedelta(days=2)
+    if not db.session.query(WeeklyReport.id).filter_by(manager_id=manager_id, report_date=latest_date).first():
+        latest_date = today - timedelta(days=2)
 
-    search = request.args.get("search", "").strip()
-    ntt_only = request.args.get("ntt_only", "")
-    target_met_only = request.args.get("target_met_only", "")
-    target_not_met_only = request.args.get("target_not_met_only", "")
-    download = request.args.get("download", "")
-
-    # Get names of businesses assigned specifically to this staff member
-    assigned_names = [b.name for b in current_user.assigned_businesses]
-
-    if not assigned_names:
-        if download == "csv":
-            return Response("No assigned businesses found\n", mimetype="text/csv")
-        return render_template("staff/businesses.html", weekly_rows=[], search=search, ntt_only=ntt_only, target_met_only=target_met_only, target_not_met_only=target_not_met_only, latest_date=latest_date)
-
-    if not WeeklyReport.query.filter_by(manager_id=current_user.manager_id, report_date=latest_date).first():
-        latest_date = date_2_days_ago
-
-    query = db.session.query(WeeklyReport).filter(
-        WeeklyReport.manager_id == current_user.manager_id,
+    query = WeeklyReport.query.filter(
+        WeeklyReport.manager_id == manager_id,
         WeeklyReport.report_date == latest_date,
-        WeeklyReport.business_name.in_(assigned_names)
+        WeeklyReport.business_name.in_(assigned_names),
     )
 
-    if search:
-        query = query.filter(WeeklyReport.business_name.ilike(f"%{search}%"))
+    if f["search"]:
+        query = query.filter(WeeklyReport.business_name.ilike(f"%{f['search']}%"))
 
-    if target_met_only:
-        query = query.filter(WeeklyReport.payment_value >= 100000)
-    elif target_not_met_only:
-        query = query.filter(WeeklyReport.payment_value < 100000)
+    if f["target_met_only"]:
+        query = query.filter(WeeklyReport.payment_value >= weekly_target)
+    elif f["target_not_met_only"]:
+        query = query.filter(WeeklyReport.payment_value < weekly_target)
 
-    weekly_rows = query.order_by(WeeklyReport.payment_value.desc()).all()
+    if f["ntt_only"]:
+        ntt_names = select(NTTReport.business_name).where(
+            NTTReport.manager_id == manager_id, NTTReport.report_date == latest_date)
+        query = query.filter(WeeklyReport.business_name.in_(ntt_names))
 
-    if ntt_only:
-        ntt_names = {
-            r.business_name for r in
-            NTTReport.query.filter_by(manager_id=current_user.manager_id, report_date=latest_date).all()
-        }
-        weekly_rows = [r for r in weekly_rows if r.business_name in ntt_names]
+    query = query.order_by(WeeklyReport.payment_value.desc(), WeeklyReport.id.desc())
 
-    # --- DOWNLOAD LOGIC ---
-    if download == "csv":
+    # ── CSV: all matching assigned businesses ─────────────────────────────────
+    if request.args.get("download") == "csv":
+        rows = query.all()
+
         def generate_csv():
-            yield "Business Name,Value (NGN),Volume,Target Met,Days Inactive\n"
-            for r in weekly_rows:
-                name = f'"{r.business_name}"'
-                val = r.payment_value or 0
-                vol = r.payment_vol or 0
-                t_met = r.target_met or 'False'
-                days = r.days_last_transact or ''
-                yield f"{name},{val},{vol},{t_met},{days}\n"
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(["Business Name", "Value (NGN)", "Volume", "Target Met", "Days Inactive"])
+            for r in rows:
+                writer.writerow([r.business_name, r.payment_value or 0, r.payment_vol or 0,
+                                 r.target_met or "False", r.days_last_transact or ""])
+                yield buf.getvalue()
+                buf.seek(0)
+                buf.truncate(0)
 
         return Response(
             generate_csv(),
             mimetype="text/csv",
-            headers={"Content-Disposition": f"attachment;filename=my_assigned_businesses_{latest_date}.csv"}
+            headers={"Content-Disposition": f"attachment;filename=my_assigned_businesses_{latest_date}.csv"},
         )
 
-    all_businesses = Business.query.filter_by(manager_id=current_user.manager_id, is_active=True).all()
-    biz_map = {b.name: b for b in all_businesses}
+    # ── One page ──────────────────────────────────────────────────────────────
+    pagination = query.paginate(page=page, per_page=BUSINESSES_PER_PAGE, error_out=False)
+
+    filter_args = {k: v for k, v in f.items() if v}
 
     return render_template(
         "staff/businesses.html",
-        weekly_rows=weekly_rows,
-        biz_map=biz_map,
-        search=search,
-        ntt_only=ntt_only,
-        target_met_only=target_met_only,
-        target_not_met_only=target_not_met_only,
+        weekly_rows=pagination.items,
+        pagination=pagination,
+        filter_args=filter_args,
         latest_date=latest_date,
+        **f,
     )

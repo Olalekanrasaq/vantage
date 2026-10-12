@@ -38,3 +38,14 @@ def init_query_profiler(app):
             if n >= 5:
                 app.logger.info("    repeated %dx: %s", n, " ".join(stmt.split())[:120])
         return resp
+
+    @app.before_request
+    def _start_timer():
+        g._t0 = time.perf_counter()
+
+    @app.after_request
+    def _log_total(resp):
+        if hasattr(g, "_t0"):
+            app.logger.info("%s %s -> %.0f ms total (server)", request.method, request.path,
+                            (time.perf_counter() - g._t0) * 1000)
+        return resp

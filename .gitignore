@@ -14,3 +14,4 @@ app/static/uploads/*
 !app/static/uploads/.gitkeep
 migrations/versions/
 *.env
+*.exe
