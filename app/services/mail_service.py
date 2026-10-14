@@ -8,8 +8,23 @@ from datetime import date
 
 
 def _send(to: str, subject: str, html: str):
-    """Send an HTML email through Gmail SMTP (STARTTLS)."""
     cfg = current_app.config
+
+    if cfg.get("BREVO_API_KEY"):
+        r = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={"api-key": cfg["BREVO_API_KEY"], "accept": "application/json"},
+            json={
+                "sender": {"name": "Vantage", "email": cfg["MAIL_FROM"]},
+                "to": [{"email": to}],
+                "subject": subject,
+                "htmlContent": html,
+            },
+            timeout=15,
+        )
+        r.raise_for_status()
+        return
+
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = formataddr(("Vantage", cfg["MAIL_FROM"]))

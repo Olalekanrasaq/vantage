@@ -32,7 +32,7 @@ class Config:
     # ── Billing ───────────────────────────────────────────────────────────────
     SUBSCRIPTION_AMOUNT = config("SUBSCRIPTION_AMOUNT", default=500, cast=int)
     SUBSCRIPTION_MONTHS = config("SUBSCRIPTION_MONTHS", default=1, cast=int)
-    APP_URL = config("APP_URL")  # e.g. https://vantage.example.com, no trailing slash
+    APP_URL = config("APP_URL", default=config("RENDER_EXTERNAL_URL", default=""))
     GRACE_DAYS = 5
 
     # ── Mail (Gmail SMTP) ─────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ class Config:
     MAIL_USERNAME = config("MAIL_USERNAME")
     MAIL_PASSWORD = config("MAIL_PASSWORD")
     MAIL_FROM = config("MAIL_FROM", default=config("MAIL_USERNAME"))
+    BREVO_API_KEY = config("BREVO_API_KEY", default="")
 
     # ── Super Admin ───────────────────────────────────────────────────────────
     SUPER_ADMIN_EMAIL = config("SUPER_ADMIN_EMAIL")
