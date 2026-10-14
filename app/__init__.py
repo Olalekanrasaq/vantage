@@ -15,6 +15,8 @@ from app.services.reminder_service import send_grace_reminders, send_missing_rep
 from app.services.storage_service import photo_url
 import app.services.cache_service  # noqa: F401  (registers cache invalidation listeners)
 from flask_wtf.csrf import CSRFError
+from flask_compress import Compress
+
 
 
 def create_app(config_name=None):
@@ -44,6 +46,7 @@ def create_app(config_name=None):
     rds.init_app(app)
     limiter.init_app(app)
     csrf.init_app(app)
+    Compress(app)
     if app.debug:
         from app.profiler import init_query_profiler
         init_query_profiler(app)

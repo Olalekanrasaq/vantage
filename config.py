@@ -47,7 +47,6 @@ class Config:
     SUPER_ADMIN_PASSWORD = config("SUPER_ADMIN_PASSWORD")
 
     # ── Uploads ───────────────────────────────────────────────────────────────
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "app", "static", "uploads")
     ALLOWED_EXTENSIONS = {"pdf"}
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     MAX_CONTENT_LENGTH = 12 * 1024 * 1024    # 12MB max upload

@@ -14,9 +14,10 @@ from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy import select
 from app.services.storage_service import upload_visit_photo, delete_photo, ImageError
 from app.services.cache_service import cached, freeze_page, bump_manager_version
+from config import Config
 
-daily_target = 14286
-weekly_target = 100000
+daily_target = Config.DAILY_TARGET
+weekly_target = Config.WEEKLY_TARGET
 
 def staff_required(f):
     @wraps(f)

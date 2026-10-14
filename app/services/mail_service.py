@@ -7,22 +7,6 @@ from flask import current_app
 from datetime import date
 
 
-# def _send(to: str, subject: str, html: str):
-#     """Base Mailgun send function."""
-#     response = requests.post(
-#         f"https://api.mailgun.net/v3/{current_app.config['MAILGUN_DOMAIN']}/messages",
-#         auth=("api", current_app.config["MAILGUN_API_KEY"]),
-#         data={
-#             "from": f"Vantage <{current_app.config['MAIL_FROM']}>",
-#             "to": to,
-#             "subject": subject,
-#             "html": html,
-#         },
-#         timeout=15,
-#     )
-#     response.raise_for_status()
-
-
 def _send(to: str, subject: str, html: str):
     """Send an HTML email through Gmail SMTP (STARTTLS)."""
     cfg = current_app.config

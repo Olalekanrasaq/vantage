@@ -1,6 +1,6 @@
 import os
 
-bind = os.getenv("GUNICORN_BIND", "127.0.0.1:8000")
+bind = os.getenv("GUNICORN_BIND") or f"0.0.0.0:{os.getenv('PORT', '8000')}"
 workers = int(os.getenv("WEB_WORKERS", 3))
 worker_class = "gthread"
 threads = int(os.getenv("WEB_THREADS", 4))   # keep equal to pool_size in ProductionConfig

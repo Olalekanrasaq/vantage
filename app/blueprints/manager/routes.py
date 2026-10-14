@@ -30,9 +30,10 @@ from app.models import (
 from app.services.extraction_service import run_extraction, ExtractionError
 from app.services.cache_service import cached, freeze_page, bump_manager_version
 from app.services.briefing_service import generate_briefing, briefing_performance
+from config import Config
 
-daily_target = 14286
-weekly_target = 100000
+daily_target = Config.DAILY_TARGET
+weekly_target = Config.WEEKLY_TARGET
 
 staff_loader = selectinload(Staff.business_assignments).joinedload(StaffBusinessAssignment.business)
 

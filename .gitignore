@@ -12,7 +12,9 @@ build/
 instance/
 app/static/uploads/*
 !app/static/uploads/.gitkeep
-migrations/versions/
 *.env
 *.exe
 *.bak
+tailwindcss
+app/static/uploads/
+instance/
