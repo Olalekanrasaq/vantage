@@ -20,18 +20,46 @@ MAX_TEXT = 200          # cap free-text fields so one long note can't inflate th
 MAX_FAILURES = 3        # per manager per day, so a failing model isn't retried forever
 
 SYSTEM_INSTRUCTION = """
-You write a short daily briefing for a business manager about their field staff.
-Use ONLY the data provided. Never invent names, numbers or events.
+You write a short daily briefing for a business manager about their field staff's activity
+on the date given in the data. Use ONLY the data provided. Never invent names, numbers or events.
+Refer to that date as "yesterday" or by the date itself, never as "today".
+Do not add a title or heading for the whole briefing; start directly with the first section.
 
-Write in markdown with these sections:
-1. **Overview**: 2 to 3 sentences on the team's day.
-2. **Staff**: one short paragraph per staff member: calls and visits made, notable outcomes,
-   and any concern (for example no activity, many unreachable calls, escalations).
-   If business_performance is present, it is shown to the manager as a separate table, so do not
-   list its numbers; only point out what stands out (for example the weakest staff on targets).
-3. **Follow-ups**: bullet list of next follow-up dates, escalations and issues needing the manager.
+What the data means:
+- activity_per_staff: number of calls and field visits each staff member logged on that date.
+- calls and field_visits: the individual calls and visits, with their outcomes.
+- business_performance (only sometimes present): each staff member is assigned a set of
+  businesses. These columns COUNT HOW MANY OF THAT STAFF MEMBER'S ASSIGNED BUSINESSES were in
+  each state on that date. Staff members do NOT have targets themselves; the targets belong to
+  the businesses. Example: businesses_meeting_daily_target = 1 with assigned_businesses = 24
+  means 1 of that staff member's 24 businesses met its daily target. It does NOT mean the staff
+  member met a target.
 
-Keep it under 400 words. Use the activity_per_staff counts as given; do not recount.
+Write in markdown with exactly these three sections:
+
+**Overview**
+2 to 3 sentences on the team's activity: total calls and visits, and the most important outcome.
+
+**Staff**
+One short paragraph per staff member, in this order:
+- Activity: calls and visits logged, and notable outcomes (e.g. terminal recovered, positive response).
+- Concerns from activity: e.g. no activity logged, unreachable numbers, escalated visits.
+- If business_performance is present: one sentence about their portfolio, always phrased in terms
+  of their businesses, e.g. "Only 1 of the 24 businesses assigned to Adeyemo met the daily target,
+  and none met the weekly target." Use the counts and percentages given; do not recalculate.
+  The full numbers are already shown to the manager in a table, so mention only what stands out,
+  such as the staff member whose businesses are doing worst on a measure.
+Never write that a staff member "met" or "failed" a target.
+
+**Follow-ups**
+A bullet list built ONLY from the calls and field_visits data:
+- every field visit with a next_follow_up date: "<business> (<staff>): <what needs doing>, due <date>"
+- every visit or call whose result shows it is unresolved (for example Pending Follow-up,
+  Escalated, Answered - Negative, No Answer, Number Unreachable).
+Do not put business_performance points in this section.
+If there is nothing, write "No follow-ups recorded."
+
+Keep the whole briefing under 500 words.
 """
 
 
@@ -102,10 +130,20 @@ def _build_context(manager_id, day):
               v.result, v.next_follow_up] for v in visits]),
     }
     if perf:
+        def pct(part, total):
+            return round(100 * part / total) if total else 0
+
         ctx["business_performance"] = _table(
-            ["staff", "assigned", "weekly_target_met", "daily_target_met", "not_declining", "transacting"],
-            [[name(p.staff_id), p.assigned, p.weekly_target_met, p.daily_target_met,
-              p.not_declining, p.transacting] for p in perf])
+            ["staff", "assigned_businesses",
+             "businesses_meeting_weekly_target", "pct_meeting_weekly_target",
+             "businesses_meeting_daily_target", "pct_meeting_daily_target",
+             "businesses_not_declining", "pct_not_declining",
+             "businesses_transacting", "pct_transacting"],
+            [[name(p.staff_id), p.assigned,
+              p.weekly_target_met, pct(p.weekly_target_met, p.assigned),
+              p.daily_target_met, pct(p.daily_target_met, p.assigned),
+              p.not_declining, pct(p.not_declining, p.assigned),
+              p.transacting, pct(p.transacting, p.assigned)] for p in perf])
 
     return ctx, bool(perf), bool(calls or visits or perf)
 
@@ -136,7 +174,7 @@ def generate_briefing(manager_id, day):
         contents="Data:\n" + json.dumps(ctx, separators=(",", ":"), default=str),
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
-            temperature=0.3,
+            temperature=0.2,
             max_output_tokens=2048,
         ),
     )

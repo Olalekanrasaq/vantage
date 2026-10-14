@@ -21,7 +21,7 @@ import fitz  # PyMuPDF
 import pandas as pd
 
 from app.extensions import db
-from app.models import Business, DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog
+from app.models import Business, DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog, DailyBriefing
 from flask import current_app
 from app.services.mail_service import send_extraction_failure_alert
 from app.services.cache_service import bump_manager_version
@@ -86,6 +86,9 @@ def run_extraction(manager, pdf_bytes: bytes, report_date: date, source: str = "
         }
         _mark_first_seen(manager.id, report_date)
         compute_staff_performance(manager.id, report_date)
+        DailyBriefing.query.filter_by(
+            manager_id=manager.id, briefing_date=report_date, includes_performance=True
+        ).delete(synchronize_session=False)
         db.session.commit()
         bump_manager_version(manager.id)
     except Exception as e:
