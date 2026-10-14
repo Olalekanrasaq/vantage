@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 1.8cm; }
+  body { font-family: Helvetica, sans-serif; font-size: 10pt; color: #1f2937; }
+  h1 { font-size: 16pt; color: #1e3a5f; margin: 0 0 2pt 0; }
+  .meta { color: #6b7280; font-size: 9pt; margin-bottom: 14pt; }
+  h2, h3 { color: #1e3a5f; font-size: 12pt; margin: 12pt 0 4pt 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 14pt 0; }
+  th { background-color: #f3f4f6; color: #374151; font-size: 8pt; text-align: right; padding: 5pt; }
+  th.left, td.left { text-align: left; }
+  td { border-bottom: 0.5pt solid #e5e7eb; padding: 5pt; text-align: right; font-size: 9pt; }
+  .pct { color: #6b7280; }
+  ul { margin: 0 0 0 12pt; }
+</style>
+</head>
+<body>
+  <h1>Daily Staff Briefing</h1>
+  <div class="meta">
+    {{ briefing.briefing_date.strftime('%A, %d %B %Y') }}
+    {% if not briefing.includes_performance %} | Calls and field visits only{% endif %}
+  </div>
+
+  {% if perf_rows %}
+  <h2>Business performance</h2>
+  <table>
+    <tr>
+      <th class="left">Staff</th><th>Assigned</th><th>Weekly target met</th>
+      <th>Daily target met</th><th>Not declining</th><th>Transacting</th>
+    </tr>
+    {% for r in perf_rows %}
+    <tr>
+      <td class="left">{{ r.staff }}</td>
+      <td>{{ r.assigned }}</td>
+      {% for v in (r.weekly_target_met, r.daily_target_met, r.not_declining, r.transacting) %}
+      <td>{{ v }}{% if r.assigned %} <span class="pct">({{ (100 * v / r.assigned) | round | int }}%)</span>{% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {{ body_html | safe }}
+</body>
+</html>

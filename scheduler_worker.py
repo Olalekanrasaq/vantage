@@ -11,6 +11,8 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app import create_app
 from app.services.reminder_service import send_grace_reminders, send_missing_report_alerts
+from app.services.archive_service import archive_old_reports
+from app.services.briefing_service import refresh_briefings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("vantage.scheduler")
@@ -20,6 +22,7 @@ app = create_app("production")
 JOBS = {
     "grace_reminders": (send_grace_reminders, {"hour": 8, "minute": 0}),
     "missing_report_alerts": (send_missing_report_alerts, {"hour": 17, "minute": 0}),
+    "archive_reports": (archive_old_reports, {"hour": 2, "minute": 30}),
 }
 
 
@@ -33,10 +36,10 @@ def main():
         return
 
     sched = BlockingScheduler(timezone="Africa/Lagos")
-    for job_id, (func, when) in JOBS.items():
-        sched.add_job(func, "cron", args=[app], id=job_id, replace_existing=True,
+    for job_id, (func, trigger, when) in JOBS.items():
+        sched.add_job(func, trigger, args=[app], id=job_id, replace_existing=True,
                       coalesce=True, misfire_grace_time=3600, **when)
-        log.info("Scheduled %s at %02d:%02d Africa/Lagos", job_id, when["hour"], when["minute"])
+        log.info("Scheduled %s: %s %s", job_id, trigger, when)
 
     try:
         sched.start()

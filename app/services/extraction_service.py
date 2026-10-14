@@ -25,6 +25,9 @@ from app.models import Business, DailyReport, WeeklyReport, NTTReport, Retention
 from flask import current_app
 from app.services.mail_service import send_extraction_failure_alert
 from app.services.cache_service import bump_manager_version
+from app.services.performance_service import compute_staff_performance
+
+from sqlalchemy import select, update, or_
 
 
 class ExtractionError(Exception):
@@ -81,6 +84,8 @@ def run_extraction(manager, pdf_bytes: bytes, report_date: date, source: str = "
             "retention": _replace(RetentionReport, manager, report_date,
                                   _retention_rows(manager, frames["retention"], source, biz_map)),
         }
+        _mark_first_seen(manager.id, report_date)
+        compute_staff_performance(manager.id, report_date)
         db.session.commit()
         bump_manager_version(manager.id)
     except Exception as e:
@@ -352,6 +357,22 @@ def _get_or_create_business(manager_id, name, biz_map):
         biz_map[name] = business.id
     return biz_map[name]
 
+def _mark_first_seen(manager_id, report_date):
+    """Set first_seen_date for businesses in this report if it is new or earlier than stored."""
+    db.session.flush()  # make sure this upload's weekly rows are visible to the query below
+    names_in_report = select(WeeklyReport.business_name).where(
+        WeeklyReport.manager_id == manager_id,
+        WeeklyReport.report_date == report_date,
+    )
+    db.session.execute(
+        update(Business)
+        .where(Business.manager_id == manager_id,
+               Business.name.in_(names_in_report),
+               or_(Business.first_seen_date.is_(None),
+                   Business.first_seen_date > report_date))
+        .values(first_seen_date=report_date)
+        .execution_options(synchronize_session=False)
+    )
 
 def _replace(model, manager, report_date, rows: dict) -> int:
     """

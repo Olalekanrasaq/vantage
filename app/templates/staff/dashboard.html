@@ -51,6 +51,7 @@
       </div>
 
       <form method="POST" action="{{ url_for('staff.update_recovery_task', task_id=task.id) }}" class="flex items-center gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <select name="status" class="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white">
           <option value="PENDING" {% if task.status == 'PENDING' %}selected{% endif %}>Pending</option>
           <option value="IN_PROGRESS" {% if task.status == 'IN_PROGRESS' %}selected{% endif %}>In Progress</option>

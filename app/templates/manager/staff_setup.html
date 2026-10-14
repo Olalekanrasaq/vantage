@@ -30,6 +30,7 @@
          x-transition:enter-end="opacity-100 translate-y-0"
          class="bg-white border border-gray-100 shadow-sm rounded-2xl p-5 mt-2">
         <form method="POST" action="{{ url_for('manager.add_staff') }}" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Username</label>
                 <input type="text" name="username" required
@@ -66,6 +67,7 @@
 {% if staffs %}
 <form method="POST" action="{{ url_for('manager.unassign_all_businesses') }}" class="mb-4 text-right"
       onsubmit="return confirm('Remove EVERY business assignment from ALL staff? This cannot be undone.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="text-xs text-red-600 hover:text-red-700 font-semibold underline">
         Unassign all businesses from all staff
     </button>
@@ -107,6 +109,7 @@
         <!-- Inline Edit Form (Hidden by default, toggled via pencil icon) -->
         <div x-show="showEdit" x-cloak class="mt-4 pt-4 border-t border-gray-100 bg-gray-50/50 p-4 rounded-xl">
             <form method="POST" action="{{ url_for('manager.edit_staff', staff_id=staff.id) }}" class="space-y-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
                     <input type="text" name="username" value="{{ staff.username }}" required
@@ -149,6 +152,7 @@
                 {% if staff.is_active %}
                 <form method="POST" action="{{ url_for('manager.deactivate_staff', staff_id=staff.id) }}"
                       onsubmit="return confirm('Deactivate {{ staff.username }}?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit"
                             class="text-xs bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 px-2.5 py-1.5 rounded-lg font-semibold transition-colors shadow-sm">
                         Deactivate
@@ -157,6 +161,7 @@
                 {% else %}
                 <form method="POST" action="{{ url_for('manager.activate_staff', staff_id=staff.id) }}"
                       onsubmit="return confirm('Activate {{ staff.username }}?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit"
                             class="text-xs bg-green-50 text-green-600 hover:bg-green-100 border border-green-100 hover:border-green-200 px-3 py-1.5 rounded-lg font-semibold transition-colors shadow-sm">
                         Activate
@@ -167,6 +172,7 @@
                 <!-- Delete Button -->
                 <form method="POST" action="{{ url_for('manager.delete_staff', staff_id=staff.id) }}"
                       onsubmit="return confirm('WARNING: Are you sure you want to permanently delete {{ staff.username }}? This action cannot be undone.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit"
                             class="text-xs bg-gray-100 text-gray-600 hover:bg-red-600 hover:text-white border border-gray-200 hover:border-red-600 px-2.5 py-1.5 rounded-lg font-semibold transition-all shadow-sm">
                         Delete
@@ -187,6 +193,7 @@
             {% set ids = assigned | map(attribute='id') | map('string') | list %}
             <form method="POST" action="{{ url_for('manager.unassign_staff_businesses', staff_id=staff.id) }}"
                   x-data='{ picked: [], allIds: {{ ids | tojson }} }'>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="flex items-center justify-between gap-2 mb-2">
                     <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
                         <input type="checkbox" class="rounded border-gray-300"

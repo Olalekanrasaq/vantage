@@ -23,6 +23,7 @@
     </ul>
 
     <form method="POST" action="{{ url_for('manager.assign_business_bulk') }}" class="mt-5 space-y-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% for s in staffs %}<input type="hidden" name="staff_ids" value="{{ s.id }}">{% endfor %}
       {% for n in names %}<input type="hidden" name="business_names" value="{{ n }}">{% endfor %}
       {% for k, v in filters.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}

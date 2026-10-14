@@ -57,6 +57,13 @@ class Config:
     S3_BUCKET = config("S3_BUCKET")
     AWS_REGION = config("AWS_REGION", default="us-east-1")
 
+    WTF_CSRF_TIME_LIMIT = None   # token lives as long as the session (sessions already expire after 20 min idle)
+    REPORT_RETENTION_DAYS = config("REPORT_RETENTION_DAYS", default=60, cast=int)
+
+    WEEKLY_TARGET = 100000
+    DAILY_TARGET = 14286
+
+    GEMINI_API_KEY = config("GEMINI_API_KEY", default="")
 
 class DevelopmentConfig(Config):
     DEBUG = True

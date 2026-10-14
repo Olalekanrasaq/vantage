@@ -2,6 +2,10 @@ import os
 import csv
 import io
 import json
+import html
+import markdown as md
+from xhtml2pdf import pisa
+
 from google import genai
 from google.genai import types
 from decouple import config
@@ -9,22 +13,23 @@ from collections import Counter
 from decimal import Decimal
 
 from datetime import date, timedelta, datetime, timezone
-from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify, session, make_response
+from flask import render_template, redirect, url_for, request, flash, current_app, Response, jsonify, session, make_response, abort, send_file
 from flask_login import login_required, current_user, logout_user
 from flask import abort
 from functools import wraps, lru_cache
-from sqlalchemy import func, distinct, case, update, select, literal_column, union_all
+from sqlalchemy import func, distinct, case, update, select, literal_column, union_all, and_
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
 
 from app.blueprints.manager import manager_bp
-from app.extensions import db
+from app.extensions import db, limiter
 from app.models import (
     Staff, Business, StaffBusinessAssignment, BusinessManager,
     DailyReport, WeeklyReport, NTTReport, RetentionReport, FetchLog,
-    StaffActivityReport, RecoveryTask, FieldVisit, CallLog
+    StaffActivityReport, RecoveryTask, FieldVisit, CallLog, DailyBriefing, StaffDailyPerformance
 )
 from app.services.extraction_service import run_extraction, ExtractionError
 from app.services.cache_service import cached, freeze_page, bump_manager_version
+from app.services.briefing_service import generate_briefing, briefing_performance
 
 daily_target = 14286
 weekly_target = 100000
@@ -180,6 +185,65 @@ def _cached_table(kind, manager_id, report_date, prev_date, page, business_filte
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
+import html
+import io
+import markdown as md
+from flask import abort, send_file
+from xhtml2pdf import pisa
+from app.services.briefing_service import briefing_performance
+
+
+@manager_bp.route("/briefing/<briefing_date>/pdf")
+@login_required
+@manager_required
+def briefing_pdf(briefing_date):
+    try:
+        day = date.fromisoformat(briefing_date)
+    except ValueError:
+        abort(404)
+
+    briefing = DailyBriefing.query.filter_by(manager_id=current_user.id, briefing_date=day).first_or_404()
+    perf_rows = briefing_performance(current_user.id, day) if briefing.includes_performance else []
+
+    # Escape first so any HTML typed into staff notes is shown as text, never interpreted
+    body_html = md.markdown(html.escape(briefing.content))
+
+    page = render_template("manager/briefing_pdf.html", briefing=briefing,
+                           perf_rows=perf_rows, body_html=body_html)
+    out = io.BytesIO()
+    result = pisa.CreatePDF(page, dest=out, link_callback=lambda uri, rel: "")  # no external fetches
+    if result.err:
+        abort(500)
+    out.seek(0)
+    return send_file(out, mimetype="application/pdf", as_attachment=True,
+                     download_name=f"staff-briefing-{day.isoformat()}.pdf")
+
+@manager_bp.route("/briefing/generate", methods=["POST"])
+@login_required
+@manager_required
+@limiter.limit("5 per day", key_func=lambda: current_user.get_id())
+def generate_briefing_now():
+    day = date.today() - timedelta(days=1)
+    existing = DailyBriefing.query.filter_by(manager_id=current_user.id, briefing_date=day).first()
+    report_in = db.session.query(StaffDailyPerformance.id).filter_by(
+        manager_id=current_user.id, report_date=day).first() is not None
+    if existing and (existing.includes_performance or not report_in):
+        flash("Yesterday's briefing is already up to date.", "info")
+        return redirect(url_for("manager.dashboard"))
+    
+    try:
+        briefing = generate_briefing(current_user.id, day)
+    except Exception:
+        current_app.logger.exception("Manual briefing failed for manager %s", current_user.id)
+        flash("Could not generate the briefing right now. Please try again shortly.", "error")
+        return redirect(url_for("manager.dashboard"))
+
+    if briefing is None:
+        flash("Your staff logged no calls or visits yesterday, so there is nothing to summarise.", "info")
+    else:
+        flash("Yesterday's briefing is ready.", "success")
+    return redirect(url_for("manager.dashboard"))
+
 def _latest_staff_reports(manager_id, page):
     # Latest date among THIS manager's staff only (it was a global max before)
     max_date = (db.session.query(func.max(StaffActivityReport.report_date))
@@ -244,6 +308,13 @@ def dashboard():
 
     staffs = Staff.query.filter_by(manager_id=mid, is_active=True).options(staff_loader).all()
     latest_staff_reports = _latest_staff_reports(mid, staff_page)
+    yesterday = date.today() - timedelta(days=1)
+    briefing = DailyBriefing.query.filter_by(manager_id=mid, briefing_date=yesterday).first()
+
+    # True if yesterday's report has been uploaded and processed
+    report_in = db.session.query(StaffDailyPerformance.id).filter_by(
+        manager_id=mid, report_date=yesterday).first() is not None
+    perf_rows = briefing_performance(mid, date.today() - timedelta(days=1)) if briefing and briefing.includes_performance else []
 
     return render_template(
         "manager/dashboard.html",
@@ -251,6 +322,9 @@ def dashboard():
         report_date=metrics["as_of"],
         staffs=staffs,
         latest_staff_reports=latest_staff_reports,
+        briefing=briefing,
+        report_in=report_in,
+        perf_rows=perf_rows,
         **tables,
     )
 
@@ -445,17 +519,11 @@ def _filtered_weekly_query(manager_id, f):
     if not db.session.query(WeeklyReport.id).filter_by(manager_id=manager_id, report_date=latest_date).first():
         latest_date = today - timedelta(days=2)
 
-    first_seen_sub = (db.session.query(
-                          WeeklyReport.business_name,
-                          func.min(WeeklyReport.report_date).label("first_seen_date"))
-                      .filter_by(manager_id=manager_id)
-                      .group_by(WeeklyReport.business_name)
-                      .subquery())
-
-    query = (db.session.query(WeeklyReport, first_seen_sub.c.first_seen_date)
-             .join(first_seen_sub, WeeklyReport.business_name == first_seen_sub.c.business_name)
-             .filter(WeeklyReport.manager_id == manager_id,
-                     WeeklyReport.report_date == latest_date))
+    query = (db.session.query(WeeklyReport, Business.first_seen_date)
+            .outerjoin(Business, and_(Business.manager_id == WeeklyReport.manager_id,
+                                    Business.name == WeeklyReport.business_name))
+            .filter(WeeklyReport.manager_id == manager_id,
+                    WeeklyReport.report_date == latest_date))
 
     if f["search"]:
         query = query.filter(WeeklyReport.business_name.ilike(f"%{f['search']}%"))
@@ -472,7 +540,7 @@ def _filtered_weekly_query(manager_id, f):
         query = query.filter(WeeklyReport.payment_value < weekly_target)
 
     if f["newly_added_only"]:
-        query = query.filter(first_seen_sub.c.first_seen_date >= today - timedelta(days=7))
+        query = query.filter(Business.first_seen_date >= today - timedelta(days=7))
 
     if f["ntt_only"]:
         ntt_names = select(NTTReport.business_name).where(

@@ -9,11 +9,12 @@ from sqlalchemy.orm import joinedload, selectinload
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import config
-from app.extensions import db, login_manager, migrate, scheduler, rds, limiter
+from app.extensions import db, login_manager, migrate, scheduler, rds, limiter, csrf
 from app.models import SuperAdmin, BusinessManager, Staff, StaffBusinessAssignment
 from app.services.reminder_service import send_grace_reminders, send_missing_report_alerts
 from app.services.storage_service import photo_url
 import app.services.cache_service  # noqa: F401  (registers cache invalidation listeners)
+from flask_wtf.csrf import CSRFError
 
 
 def create_app(config_name=None):
@@ -42,7 +43,7 @@ def create_app(config_name=None):
     login_manager.init_app(app)
     rds.init_app(app)
     limiter.init_app(app)
-
+    csrf.init_app(app)
     if app.debug:
         from app.profiler import init_query_profiler
         init_query_profiler(app)
@@ -111,6 +112,13 @@ def create_app(config_name=None):
         if request.is_json:
             return {"error": "File too large. The maximum is 12MB."}, 413
         flash("File too large. The maximum is 12MB.", "error")
+        return redirect(request.referrer or url_for("auth.landing"))
+
+    @app.errorhandler(CSRFError)
+    def csrf_failed(e):
+        if request.is_json:
+            return {"error": "Your session expired. Refresh the page and try again."}, 400
+        flash("This form expired. Please try again.", "error")
         return redirect(request.referrer or url_for("auth.landing"))
 
     # ── Create super admin on first run ───────────────────────────────────────

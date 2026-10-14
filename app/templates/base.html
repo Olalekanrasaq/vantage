@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#1e3a5f" />
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}Vantage{% endblock %}</title>
 
     <!-- Tailwind, built ahead of time -->
@@ -43,6 +44,7 @@
                     <a href="{{ url_for('recovery.center') }}" class="hover:text-blue-200 transition">Recovery</a>
                     <a href="{{ url_for('manager.field_visits') }}" class="hover:text-blue-200 transition">Field Visits</a>
                     <a href="{{ url_for('manager.leaderboard') }}" class="hover:text-blue-200 transition">Leaderboard</a>
+                    <a href="{{ url_for('payment.subscribe') }}" class="hover:text-blue-200 transition">Billing</a>
                 {% elif current_user.role == 'staff' %}
                     <a href="{{ url_for('staff.dashboard') }}" class="hover:text-blue-200 transition">Dashboard</a>
                     <a href="{{ url_for('staff.businesses') }}" class="hover:text-blue-200 transition">Assigned Businesses</a>
@@ -145,6 +147,14 @@
                                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                         </svg>
                         Leaderboard
+                    </a>
+                    <a href="{{ url_for('payment.subscribe') }}"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-brand-700 transition text-sm">
+                        <svg class="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+                        </svg>
+                        Billing
                     </a>
                 {% elif current_user.role == 'staff' %}
                     <a href="{{ url_for('staff.dashboard') }}"

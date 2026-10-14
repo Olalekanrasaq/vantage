@@ -4,17 +4,20 @@
 <div class="max-w-sm mx-auto mt-8 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
   <h1 class="text-xl font-bold text-brand-900">
     {% if status == 'unpaid' %}Activate your account
+    {% elif status == 'active' %}Renew your subscription
     {% elif status == 'grace' %}Subscription overdue
     {% else %}Subscription expired{% endif %}
   </h1>
   <p class="text-sm text-gray-500 mt-1">
     {% if status == 'unpaid' %}Complete payment to start using Vantage.
+    {% elif status == 'active' %}Renewing early adds a month to your current due date. You won't lose any days.
     {% elif status == 'grace' %}You have {{ grace_days_left }} day(s) left before access is suspended.
     {% else %}Renew to regain access to your dashboard.{% endif %}
   </p>
   <p class="text-3xl font-bold text-brand-900 my-5">₦{{ "{:,.0f}".format(amount) }}
     <span class="text-sm font-normal text-gray-400">/ 30 days</span></p>
   <form method="POST" action="{{ url_for('payment.initiate') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit"
             class="w-full bg-brand-900 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-brand-700 transition">
       Pay with Monnify

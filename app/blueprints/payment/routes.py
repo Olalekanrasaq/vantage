@@ -2,13 +2,27 @@ from flask import render_template, redirect, url_for, request, session, flash, a
 from flask_login import current_user, login_user
 
 from app.blueprints.payment import payment_bp
-from app.extensions import db
+from app.extensions import db, csrf
 from app.models import BusinessManager, Payment
 from app.services.payment_service import (
     MonnifyError, initialize_payment, fetch_transaction,
     verify_signature, activate_payment,
 )
 
+from datetime import datetime, timedelta, timezone
+
+RENEW_WINDOW_DAYS = 7
+
+def _renewal_opens_at(manager):
+    """When an active manager may renew, or None if they can renew now."""
+    if manager.subscription_status != "active" or not manager.subscription_expiry:
+        return None
+    expiry = manager.subscription_expiry
+    if expiry.tzinfo is not None:
+        expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
+    opens = expiry - timedelta(days=RENEW_WINDOW_DAYS)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    return opens if now < opens else None
 
 def _payment_manager():
     """Logged-in manager (grace period) or the pending one from signup/login."""
@@ -23,7 +37,9 @@ def _render_payment_page():
     if manager is None:
         return redirect(url_for("auth.user_login"))
     status = manager.subscription_status
-    if status == "active":
+    opens = _renewal_opens_at(manager)
+    if opens:
+        flash(f"Your subscription is active. You can renew from {opens:%d %b %Y}.", "info")
         return redirect(url_for("manager.dashboard") if current_user.is_authenticated
                         else url_for("auth.user_login"))
     return render_template(
@@ -49,7 +65,7 @@ def initiate():
     manager = _payment_manager()
     if manager is None:
         return redirect(url_for("auth.user_login"))
-    if manager.subscription_status == "active":
+    if _renewal_opens_at(manager):
         return redirect(url_for("manager.dashboard"))
     try:
         return redirect(initialize_payment(manager))
@@ -94,6 +110,7 @@ def callback():
 
 
 @payment_bp.route("/webhook", methods=["POST"])
+@csrf.exempt
 def webhook():
     raw = request.get_data()
     if not verify_signature(raw, request.headers.get("monnify-signature", "")):

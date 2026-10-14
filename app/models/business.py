@@ -14,6 +14,7 @@ class Business(db.Model):
     is_active = db.Column(db.Boolean, default=True)
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    first_seen_date = db.Column(db.Date, nullable=True)
 
     # Relationships
     manager = db.relationship("BusinessManager", back_populates="businesses")

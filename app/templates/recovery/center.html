@@ -56,6 +56,7 @@
             <div class="flex items-center gap-2">
                 <!-- Update Status Form -->
                 <form method="POST" action="{{ url_for('recovery.update_task_status', task_id=task.id) }}" class="flex items-center gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <select name="status" class="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white">
                         <option value="PENDING" {% if task.status == 'PENDING' %}selected{% endif %}>Pending</option>
                         <option value="IN_PROGRESS" {% if task.status == 'IN_PROGRESS' %}selected{% endif %}>In Progress</option>
@@ -69,6 +70,7 @@
                 <!-- Separate Clear Task Form (Only shown if resolved) -->
                 {% if task.status == 'RESOLVED' %}
                 <form method="POST" action="{{ url_for('recovery.clear_task', task_id=task.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" 
                             class="bg-gray-200 text-gray-700 rounded-lg px-3 py-1 text-xs font-medium hover:bg-gray-300 transition"
                             onclick="return confirm('Are you sure you want to clear this resolved task?');">
@@ -104,6 +106,7 @@
             <span class="text-xs bg-green-50 text-green-700 px-3 py-1.5 rounded-lg font-medium self-start md:self-auto">Task Active</span>
             {% else %}
             <form method="POST" action="{{ url_for('recovery.create_task') }}" class="flex items-center gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="business_name" value="{{ row.business_name }}">
                 <input type="hidden" name="days_inactive" value="{{ row.days_last_transact }}">
                 <input type="hidden" name="terminal_serial" value="{{ row.terminal_serial or '' }}">

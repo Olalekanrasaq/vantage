@@ -61,3 +61,26 @@ class Staff(UserMixin, db.Model):
 
     def __repr__(self):
         return f"<Staff {self.username} (manager_id={self.manager_id})>"
+
+class StaffDailyPerformance(db.Model):
+    __tablename__ = "staff_daily_performance"
+
+    id = db.Column(db.Integer, primary_key=True)
+    manager_id = db.Column(db.Integer, db.ForeignKey("business_managers.id", ondelete="CASCADE"),
+                           nullable=False)
+    staff_id = db.Column(db.Integer, db.ForeignKey("staffs.id", ondelete="CASCADE"),
+                         nullable=False)
+    report_date = db.Column(db.Date, nullable=False)
+
+    assigned = db.Column(db.Integer, nullable=False, default=0)
+    weekly_target_met = db.Column(db.Integer, nullable=False, default=0)
+    daily_target_met = db.Column(db.Integer, nullable=False, default=0)
+    not_declining = db.Column(db.Integer, nullable=False, default=0)
+    transacting = db.Column(db.Integer, nullable=False, default=0)
+
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        db.UniqueConstraint("staff_id", "report_date", name="uq_staff_perf_per_day"),
+        db.Index("ix_staff_perf_manager_date", "manager_id", "report_date"),
+    )

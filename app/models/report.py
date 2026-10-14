@@ -113,3 +113,20 @@ class RetentionReport(db.Model):
 
     def __repr__(self):
         return f"<RetentionReport {self.business_name} {self.report_date}>"
+
+class DailyBriefing(db.Model):
+    __tablename__ = "daily_briefings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    manager_id = db.Column(db.Integer, db.ForeignKey("business_managers.id", ondelete="CASCADE"),
+                           nullable=False)
+    briefing_date = db.Column(db.Date, nullable=False)        # the day the activity happened
+    includes_performance = db.Column(db.Boolean, nullable=False, default=False)
+    content = db.Column(db.Text, nullable=False)              # the briefing, in markdown
+    input_tokens = db.Column(db.Integer)                      # for cost tracking
+    output_tokens = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        db.UniqueConstraint("manager_id", "briefing_date", name="uq_briefing_per_day"),
+    )

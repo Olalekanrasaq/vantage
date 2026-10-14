@@ -175,6 +175,7 @@
                 <div class="flex items-center gap-1 bg-brand-50 text-brand-700 rounded-full px-2.5 py-1 text-[10px] font-medium border border-brand-100">
                   {{ a.staff.username }}
                   <form method="POST" action="{{ url_for('manager.unassign_business', assignment_id=a.id, **keep) }}" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="ml-0.5 text-brand-400 hover:text-red-500 font-bold leading-none">×</button>
                   </form>
                 </div>
@@ -187,6 +188,7 @@
             <td class="px-4 py-3 text-right">
               {% if staffs %}
               <form method="POST" action="{{ url_for('manager.assign_business', **keep) }}" class="flex gap-1 justify-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="business_name" value="{{ row.business_name }}">
                 <select name="staff_id" required
                         class="border border-gray-200 rounded-lg px-2 py-1 text-[10px] bg-gray-50 focus:outline-none focus:ring-1 focus:ring-brand-500 max-w-[100px]">
@@ -254,6 +256,7 @@
         <div class="flex items-center gap-1 bg-brand-50 text-brand-700 rounded-full px-2.5 py-1 text-xs font-medium border border-brand-100">
           {{ a.staff.username }}
           <form method="POST" action="{{ url_for('manager.unassign_business', assignment_id=a.id, **keep) }}" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="ml-0.5 text-brand-400 hover:text-red-500 font-bold leading-none">×</button>
           </form>
         </div>
@@ -263,6 +266,7 @@
 
       {% if staffs %}
       <form method="POST" action="{{ url_for('manager.assign_business', **keep) }}" class="flex gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="business_name" value="{{ row.business_name }}">
         <select name="staff_id" required
                 class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
@@ -313,6 +317,7 @@
       </div>
 
       <form method="POST" action="{{ url_for('manager.assign_business_bulk') }}" class="p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% for k, v in keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
         <input type="hidden" name="all_matching" value="1" :disabled="!allMatching">
         <template x-for="name in selectedBusinesses">
@@ -352,6 +357,7 @@
         <h3 class="font-bold text-gray-800">Unassign Businesses</h3>
       </div>
       <form method="POST" action="{{ url_for('manager.unassign_business_bulk') }}" class="p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% for k, v in keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
         <input type="hidden" name="all_matching" value="1" :disabled="!allMatching">
         <template x-for="name in selectedBusinesses">

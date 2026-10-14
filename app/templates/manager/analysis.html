@@ -179,7 +179,10 @@ document.getElementById('ask-ai-btn').addEventListener('click', async () => {
     try {
         const response = await fetch("{{ url_for('manager.ai_analyze') }}", {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+            },
             body: JSON.stringify({ prompt })
         });
         

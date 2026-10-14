@@ -16,6 +16,94 @@
 {{ render(metrics) }}
 <!-- {% include "partials/dashboard_metrics.html" %} -->
 
+<!-- Daily staff briefing -->
+<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-base font-bold text-gray-800">Daily Staff Briefing</h2>
+    {% if briefing %}
+    <span class="text-xs text-gray-400">{{ briefing.briefing_date.strftime('%a %d %b') }}</span>
+    {% endif %}
+  </div>
+
+  {% if briefing %}
+
+    {% if not briefing.includes_performance %}
+      {% if report_in %}
+      <!-- State 2: report has arrived, offer the update -->
+      <div class="bg-blue-50 text-blue-800 rounded-lg px-3 py-2 mb-3 text-xs flex flex-wrap items-center justify-between gap-2">
+        <span>Today's report is in. Update the briefing to add business performance.</span>
+        <form method="POST" action="{{ url_for('manager.generate_briefing_now') }}"
+              x-data="{ busy: false }" @submit="busy = true">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" :disabled="busy"
+                  class="bg-brand-900 text-white rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-brand-700 transition disabled:opacity-60">
+            <span x-show="!busy">Update with today's report</span>
+            <span x-show="busy" x-cloak>Updating...</span>
+          </button>
+        </form>
+      </div>
+      {% else %}
+      <p class="text-xs text-yellow-800 bg-yellow-50 rounded-lg px-3 py-2 mb-3">
+        Calls and field visits only. You can add business performance once today's report is uploaded.
+      </p>
+      {% endif %}
+    {% endif %}
+
+    {% if perf_rows %}
+    <div class="table-scroll mb-4 border border-gray-100 rounded-xl">
+      <table class="w-full text-xs">
+        <thead class="bg-gray-50 text-gray-500 uppercase tracking-wide">
+          <tr>
+            <th class="px-3 py-2 text-left">Staff</th>
+            <th class="px-3 py-2 text-right">Assigned</th>
+            <th class="px-3 py-2 text-right">Weekly target met</th>
+            <th class="px-3 py-2 text-right">Daily target met</th>
+            <th class="px-3 py-2 text-right">Not declining</th>
+            <th class="px-3 py-2 text-right">Transacting</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for r in perf_rows %}
+          <tr>
+            <td class="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">{{ r.staff }}</td>
+            <td class="px-3 py-2 text-right">{{ r.assigned }}</td>
+            {% for v in (r.weekly_target_met, r.daily_target_met, r.not_declining, r.transacting) %}
+            <td class="px-3 py-2 text-right whitespace-nowrap">
+              {{ v }}{% if r.assigned %} <span class="text-gray-400">({{ (100 * v / r.assigned) | round | int }}%)</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <div id="briefing-md" data-md="{{ briefing.content }}" class="prose prose-sm max-w-none text-gray-700"></div>
+
+    <a href="{{ url_for('manager.briefing_pdf', briefing_date=briefing.briefing_date.isoformat()) }}"
+       class="inline-flex items-center gap-2 mt-4 bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-green-700 transition">
+      Download PDF
+    </a>
+
+  {% else %}
+    <!-- State 1: nothing yet -->
+    <p class="text-sm text-gray-500 mb-3">
+      No briefing for yesterday yet. Generate a summary of yesterday's calls and field visits
+      {% if report_in %}and business performance{% endif %}.
+    </p>
+    <form method="POST" action="{{ url_for('manager.generate_briefing_now') }}"
+          x-data="{ busy: false }" @submit="busy = true">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" :disabled="busy"
+              class="bg-brand-900 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-brand-700 transition disabled:opacity-60">
+        <span x-show="!busy">Generate yesterday's briefing</span>
+        <span x-show="busy" x-cloak>Generating, please wait...</span>
+      </button>
+    </form>
+  {% endif %}
+</div>
+
 <!-- Staff summary strip -->
 {% if staffs %}
 <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5">
@@ -54,4 +142,10 @@
 
 {% include "partials/ajax_pagination.html" %}
 
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script>
+  const md = document.getElementById("briefing-md");
+  if (md) md.innerHTML = DOMPurify.sanitize(marked.parse(md.dataset.md));
+</script>
 {% endblock %}
