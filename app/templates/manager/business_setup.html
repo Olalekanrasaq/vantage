@@ -147,7 +147,7 @@
           {% for row in weekly_rows %}
           {% set biz = biz_map.get(row.business_name) %}
           {% set assignments = biz.staff_assignments if biz else [] %}
-          {% set met = (row.payment_value or 0) >= 100000 %}
+          {% set met = row.terminals_met == row.terminal_count %}
           <tr class="hover:bg-gray-50/50 transition">
             <td class="px-4 py-3">
               <input type="checkbox" value="{{ row.business_name }}" x-model="selectedBusinesses" @change="allMatching = false"
@@ -161,6 +161,16 @@
                 {% elif row.payment_value >= 500_000 %}bg-brand-100 text-brand-700
                 {% elif row.payment_value >= 100_000 %}bg-yellow-100 text-yellow-700
                 {% else %}bg-gray-100 text-gray-500{% endif %}">₦{{ "{:,.0f}".format(row.payment_value or 0) }}</span>
+              {% if row.terminal_count > 1 %}
+              <details class="text-[10px] text-gray-500 mt-1">
+                <summary class="cursor-pointer select-none">{{ row.terminal_count }} terminals · {{ row.terminals_met }} met target</summary>
+                <div class="mt-1 space-y-0.5 pl-2 border-l border-gray-200">
+                  {% for t in row.terminals %}
+                  <div>{{ t.terminal_serial or '-' }}: ₦{{ "{:,.0f}".format(t.payment_value or 0) }}</div>
+                  {% endfor %}
+                </div>
+              </details>
+              {% endif %}
             </td>
             <td class="px-4 py-3 text-gray-500 space-y-1">
               <div>Weekly Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></div>
@@ -175,7 +185,7 @@
                 <div class="flex items-center gap-1 bg-brand-50 text-brand-700 rounded-full px-2.5 py-1 text-[10px] font-medium border border-brand-100">
                   {{ a.staff.username }}
                   <form method="POST" action="{{ url_for('manager.unassign_business', assignment_id=a.id, **keep) }}" class="inline">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="ml-0.5 text-brand-400 hover:text-red-500 font-bold leading-none">×</button>
                   </form>
                 </div>
@@ -188,7 +198,7 @@
             <td class="px-4 py-3 text-right">
               {% if staffs %}
               <form method="POST" action="{{ url_for('manager.assign_business', **keep) }}" class="flex gap-1 justify-end">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="business_name" value="{{ row.business_name }}">
                 <select name="staff_id" required
                         class="border border-gray-200 rounded-lg px-2 py-1 text-[10px] bg-gray-50 focus:outline-none focus:ring-1 focus:ring-brand-500 max-w-[100px]">
@@ -226,7 +236,7 @@
     {% for row in weekly_rows %}
     {% set biz = biz_map.get(row.business_name) %}
     {% set assignments = biz.staff_assignments if biz else [] %}
-    {% set met = (row.payment_value or 0) >= 100000 %}
+    {% set met = row.terminals_met == row.terminal_count %}
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 relative pl-12">
       <div class="absolute left-4 top-4">
         <input type="checkbox" value="{{ row.business_name }}" x-model="selectedBusinesses" @change="allMatching = false"
@@ -243,6 +253,17 @@
           {% else %}bg-gray-100 text-gray-500{% endif %}">₦{{ "{:,.0f}".format(row.payment_value or 0) }}</span>
       </div>
 
+      {% if row.terminal_count > 1 %}
+      <details class="text-[11px] text-gray-500 mb-2">
+        <summary class="cursor-pointer select-none">{{ row.terminal_count }} terminals · {{ row.terminals_met }} met target</summary>
+        <div class="mt-1 space-y-0.5 pl-2 border-l border-gray-200">
+          {% for t in row.terminals %}
+          <div>{{ t.terminal_serial or '-' }}: ₦{{ "{:,.0f}".format(t.payment_value or 0) }}</div>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+
       <div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 mb-3 bg-gray-50 p-2 rounded">
         <span>Weekly Vol: <strong class="text-gray-700">{{ "{:,}".format(row.payment_vol or 0) }}</strong></span>
         <span>NTT Days: <strong class="text-gray-700">{{ row.days_last_transact or '-' }}</strong></span>
@@ -256,7 +277,7 @@
         <div class="flex items-center gap-1 bg-brand-50 text-brand-700 rounded-full px-2.5 py-1 text-xs font-medium border border-brand-100">
           {{ a.staff.username }}
           <form method="POST" action="{{ url_for('manager.unassign_business', assignment_id=a.id, **keep) }}" class="inline">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="ml-0.5 text-brand-400 hover:text-red-500 font-bold leading-none">×</button>
           </form>
         </div>
@@ -266,7 +287,7 @@
 
       {% if staffs %}
       <form method="POST" action="{{ url_for('manager.assign_business', **keep) }}" class="flex gap-2">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="business_name" value="{{ row.business_name }}">
         <select name="staff_id" required
                 class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
@@ -317,7 +338,7 @@
       </div>
 
       <form method="POST" action="{{ url_for('manager.assign_business_bulk') }}" class="p-6">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% for k, v in keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
         <input type="hidden" name="all_matching" value="1" :disabled="!allMatching">
         <template x-for="name in selectedBusinesses">
@@ -357,7 +378,7 @@
         <h3 class="font-bold text-gray-800">Unassign Businesses</h3>
       </div>
       <form method="POST" action="{{ url_for('manager.unassign_business_bulk') }}" class="p-6">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% for k, v in keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
         <input type="hidden" name="all_matching" value="1" :disabled="!allMatching">
         <template x-for="name in selectedBusinesses">

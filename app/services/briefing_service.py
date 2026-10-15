@@ -38,7 +38,7 @@ What the data means:
 Write in markdown with exactly these three sections:
 
 **Overview**
-2 to 3 sentences on the team's activity: total calls and visits, and the most important outcome.
+3 to 4 sentences on the team's activity: total calls and visits, and the most important outcome.
 
 **Staff**
 One short paragraph per staff member, in this order:

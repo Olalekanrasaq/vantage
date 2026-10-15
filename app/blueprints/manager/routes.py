@@ -5,6 +5,8 @@ import json
 import html
 import markdown as md
 from xhtml2pdf import pisa
+from collections import Counter, defaultdict
+from types import SimpleNamespace
 
 from google import genai
 from google.genai import types
@@ -67,7 +69,7 @@ def _summaries(manager_id, dates, business_names=None):
                 literal_column(f"'{kind}'").label("kind"),
                 model.report_date.label("d"),
                 func.count().label("n_rows"),
-                func.count(distinct(model.business_name)).label("n_biz"),
+                func.count().label("n_biz"),          # a terminal counts as one business
                 met.label("n_met"))
              .where(model.manager_id == manager_id, model.report_date.in_(dates))
              .group_by(model.report_date))
@@ -471,44 +473,61 @@ def _business_filters(src):
     """Filter values from request.args (GET) or request.form (POST)."""
     return {k: (src.get(k) or "").strip() for k in BULK_FILTER_KEYS}
 
-
 def _filtered_weekly_query(manager_id, f):
-    """The businesses-page query with every filter applied. Returns (query, latest_date).
-    Rows are (WeeklyReport, first_seen_date)."""
+    """Businesses page: one row per business, totalled over all its terminals.
+    A business is listed when ANY of its terminals matches the filters.
+    Returns (query, latest_date)."""
     today = date.today()
     latest_date = today - timedelta(days=1)
     if not db.session.query(WeeklyReport.id).filter_by(manager_id=manager_id, report_date=latest_date).first():
         latest_date = today - timedelta(days=2)
 
-    query = (db.session.query(WeeklyReport, Business.first_seen_date)
-            .outerjoin(Business, and_(Business.manager_id == WeeklyReport.manager_id,
-                                    Business.name == WeeklyReport.business_name))
-            .filter(WeeklyReport.manager_id == manager_id,
-                    WeeklyReport.report_date == latest_date))
-
+    # 1. Terminal-level filters decide which businesses match
+    matching = select(WeeklyReport.business_name).where(
+        WeeklyReport.manager_id == manager_id,
+        WeeklyReport.report_date == latest_date,
+    )
     if f["search"]:
-        query = query.filter(WeeklyReport.business_name.ilike(f"%{f['search']}%"))
+        matching = matching.where(WeeklyReport.business_name.ilike(f"%{f['search']}%"))
 
     if f["band"] in PAYMENT_BANDS:
         low, high = PAYMENT_BANDS[f["band"]]
-        query = query.filter(WeeklyReport.payment_value >= low)
+        matching = matching.where(WeeklyReport.payment_value >= low)
         if high != float("inf"):
-            query = query.filter(WeeklyReport.payment_value < high)
+            matching = matching.where(WeeklyReport.payment_value < high)
 
     if f["target_met_only"]:
-        query = query.filter(WeeklyReport.payment_value >= weekly_target)
+        matching = matching.where(WeeklyReport.payment_value >= weekly_target)
     elif f["target_not_met_only"]:
-        query = query.filter(WeeklyReport.payment_value < weekly_target)
-
-    if f["newly_added_only"]:
-        query = query.filter(Business.first_seen_date >= today - timedelta(days=7))
+        matching = matching.where(WeeklyReport.payment_value < weekly_target)
 
     if f["ntt_only"]:
         ntt_names = select(NTTReport.business_name).where(
             NTTReport.manager_id == manager_id, NTTReport.report_date == latest_date)
-        query = query.filter(WeeklyReport.business_name.in_(ntt_names))
+        matching = matching.where(WeeklyReport.business_name.in_(ntt_names))
 
-    query = query.order_by(WeeklyReport.payment_value.desc(), WeeklyReport.id.desc())
+    # 2. One row per matching business, over ALL its terminals
+    total_value = func.sum(WeeklyReport.payment_value)
+    query = (
+        db.session.query(
+            WeeklyReport.business_name.label("business_name"),
+            func.count().label("terminal_count"),
+            func.sum(case((WeeklyReport.payment_value >= weekly_target, 1), else_=0)).label("terminals_met"),
+            total_value.label("payment_value"),
+            func.sum(WeeklyReport.payment_vol).label("payment_vol"),
+            func.max(Business.first_seen_date).label("first_seen_date"),
+        )
+        .outerjoin(Business, and_(Business.manager_id == WeeklyReport.manager_id,
+                                  Business.name == WeeklyReport.business_name))
+        .filter(WeeklyReport.manager_id == manager_id,
+                WeeklyReport.report_date == latest_date,
+                WeeklyReport.business_name.in_(matching))
+    )
+    if f["newly_added_only"]:
+        query = query.filter(Business.first_seen_date >= today - timedelta(days=7))
+
+    query = query.group_by(WeeklyReport.business_name).order_by(
+        total_value.desc(), WeeklyReport.business_name)
     return query, latest_date
 
 
@@ -516,9 +535,8 @@ def _selected_business_names():
     """Names posted by a bulk form: the ticked ones, or every business matching the filters."""
     if request.form.get("all_matching"):
         query, _ = _filtered_weekly_query(current_user.id, _business_filters(request.form))
-        return [name for (name,) in query.with_entities(WeeklyReport.business_name).all()]
+        return [r.business_name for r in query.all()]
     return request.form.getlist("business_names")
-
 
 @manager_bp.route("/businesses")
 @login_required
@@ -534,16 +552,11 @@ def businesses():
         def generate_csv():
             buf = io.StringIO()
             writer = csv.writer(buf)
-            writer.writerow(["Business Name", "Value (NGN)", "Volume", "Target Met", "Days Inactive", "Date Added"])
-            for report, first_seen in rows:
-                writer.writerow([
-                    report.business_name,
-                    report.payment_value or 0,
-                    report.payment_vol or 0,
-                    report.target_met or "False",
-                    report.days_last_transact or "",
-                    first_seen or "",
-                ])
+            writer.writerow(["Business Name", "Terminals", "Terminals Meeting Target",
+                             "Total Value (NGN)", "Total Volume", "Date Added"])
+            for r in rows:
+                writer.writerow([r.business_name, r.terminal_count, r.terminals_met or 0,
+                                 r.payment_value or 0, r.payment_vol or 0, r.first_seen_date or ""])
                 yield buf.getvalue()
                 buf.seek(0)
                 buf.truncate(0)
@@ -557,14 +570,36 @@ def businesses():
     # ── One page of results ───────────────────────────────────────────────────
     page = request.args.get("page", 1, type=int)
     pagination = query.paginate(page=page, per_page=BUSINESSES_PER_PAGE, error_out=False)
+    names = [r.business_name for r in pagination.items]
+
+    # Terminal breakdown for the businesses on this page only
+    terminals = defaultdict(list)
+    if names:
+        for t in (WeeklyReport.query
+                  .filter(WeeklyReport.manager_id == current_user.id,
+                          WeeklyReport.report_date == latest_date,
+                          WeeklyReport.business_name.in_(names))
+                  .order_by(WeeklyReport.payment_value.desc())):
+            terminals[t.business_name].append(t)
 
     weekly_rows = []
-    for report, first_seen in pagination.items:
-        report.first_seen_date = first_seen
-        weekly_rows.append(report)
+    for r in pagination.items:
+        ts = terminals[r.business_name]
+        days = [int(t.days_last_transact) for t in ts
+                if (t.days_last_transact or "").strip().isdigit()]
+        weekly_rows.append(SimpleNamespace(
+            business_name=r.business_name,
+            payment_value=r.payment_value or 0,
+            payment_vol=r.payment_vol or 0,
+            first_seen_date=r.first_seen_date,
+            terminal_count=r.terminal_count,
+            terminals_met=r.terminals_met or 0,
+            target_met="True" if r.terminals_met == r.terminal_count else "False",
+            days_last_transact=max(days) if days else None,   # longest-inactive terminal
+            terminals=ts,
+        ))
 
     # Load assignments only for the businesses on this page
-    names = [r.business_name for r in weekly_rows]
     page_businesses = (
         Business.query
         .filter(Business.manager_id == current_user.id,

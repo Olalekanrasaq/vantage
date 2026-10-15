@@ -302,9 +302,10 @@ def businesses():
         query = query.filter(WeeklyReport.payment_value < weekly_target)
 
     if f["ntt_only"]:
-        ntt_names = select(NTTReport.business_name).where(
-            NTTReport.manager_id == manager_id, NTTReport.report_date == latest_date)
-        query = query.filter(WeeklyReport.business_name.in_(ntt_names))
+        ntt_serials = select(NTTReport.terminal_serial).where(
+            NTTReport.manager_id == manager_id, NTTReport.report_date == latest_date,
+            NTTReport.terminal_serial.isnot(None))
+        query = query.filter(WeeklyReport.terminal_serial.in_(ntt_serials))
 
     query = query.order_by(WeeklyReport.payment_value.desc(), WeeklyReport.id.desc())
 

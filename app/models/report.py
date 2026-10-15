@@ -25,8 +25,6 @@ class DailyReport(db.Model):
     business = db.relationship("Business", back_populates="reports")
 
     __table_args__ = (
-        db.UniqueConstraint("manager_id", "business_name", "terminal_serial", "report_date",
-                            name="uq_daily_report"),
         db.Index("ix_daily_manager_date", "manager_id", "report_date"),
     )
 
@@ -45,6 +43,7 @@ class WeeklyReport(db.Model):
 
     # Extracted fields
     business_name = db.Column(db.String(255), nullable=False)
+    terminal_serial = db.Column(db.String(100), nullable=True)
     target_met = db.Column(db.String(20), nullable=True)
     payment_value = db.Column(db.Numeric(15, 2), default=0)
     payment_vol = db.Column(db.Integer, default=0)
@@ -53,8 +52,6 @@ class WeeklyReport(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        db.UniqueConstraint("manager_id", "business_name", "report_date",
-                            name="uq_weekly_report"),
         db.Index("ix_weekly_manager_date", "manager_id", "report_date"),
     )
 
@@ -79,8 +76,6 @@ class NTTReport(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        db.UniqueConstraint("manager_id", "business_name", "report_date",
-                            name="uq_ntt_report"),
         db.Index("ix_ntt_manager_date", "manager_id", "report_date"),
     )
 
@@ -106,8 +101,6 @@ class RetentionReport(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        db.UniqueConstraint("manager_id", "business_name", "report_date",
-                            name="uq_retention_report"),
         db.Index("ix_retention_manager_date", "manager_id", "report_date"),
     )
 

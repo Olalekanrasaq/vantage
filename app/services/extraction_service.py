@@ -154,7 +154,7 @@ def extract_daily_report(pdf_bytes: bytes) -> pd.DataFrame:
         names_part = []
         while start < len(data_list):
             is_name = data_list[start].strip()
-            if is_name[-4:].isdigit():
+            if is_name[-4:].isdigit() and len(is_name) > 4:
                 break
             names_part.append(is_name)
             start += 1
@@ -227,6 +227,7 @@ def extract_business_report(pdf_bytes: bytes) -> pd.DataFrame:
         try:
             bo = {
                 "Business Name": " ".join(names_part),
+                "terminal_serial": data_list[i].strip(),
                 "target_met": data_list[i + 2],
                 "payment_value": float(data_list[i + 3].replace(",", "")),
                 "payment_vol": int(data_list[i + 4].replace(",", "")),
@@ -377,92 +378,93 @@ def _mark_first_seen(manager_id, report_date):
         .execution_options(synchronize_session=False)
     )
 
-def _replace(model, manager, report_date, rows: dict) -> int:
+def _replace(model, manager, report_date, rows: list) -> int:
     """
-    Delete this manager's rows for the report date, then insert the new ones.
-    The caller commits, so all four tables are replaced in one transaction.
+    Delete this manager's rows for the report date, then insert every extracted row.
+    Re-uploading a date is the only thing that overwrites. The caller commits,
+    so all four tables are replaced in one transaction.
     """
     model.query.filter_by(manager_id=manager.id, report_date=report_date).delete(
         synchronize_session=False
     )
-    for kwargs in rows.values():
-        db.session.add(model(manager_id=manager.id, report_date=report_date, **kwargs))
+    db.session.add_all(
+        model(manager_id=manager.id, report_date=report_date, **kwargs) for kwargs in rows
+    )
     return len(rows)
 
 
-# Row builders. Dicts are keyed on the same columns as each table's unique
-# constraint, so duplicate rows inside one PDF collapse to the last one.
+# Row builders. Every extracted row is kept: a business with several terminals
+# appears once per terminal.
 
-def _daily_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> dict:
-    rows = {}
+def _daily_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> list:
+    rows = []
     for _, row in df.iterrows():
         name = str(row.get("business_name", "")).strip()
         if not name:
             continue
-        serial = str(row.get("terminal_serial", ""))
-        rows[(name, serial)] = dict(
+        rows.append(dict(
             business_id=_get_or_create_business(manager.id, name, biz_map),
             source=source,
             business_name=name,
-            terminal_serial=serial,
+            terminal_serial=str(row.get("terminal_serial", "")).strip(),
             target_met=str(row.get("target_met", "")),
             payment_value=float(row.get("payment_value", 0)),
             payment_vol=int(row.get("payment_vol", 0)),
             days_last_transact=str(row.get("days_last_transact", "")),
-        )
+        ))
     return rows
 
 
-def _weekly_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> dict:
-    rows = {}
+def _weekly_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> list:
+    rows = []
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
-        rows[name] = dict(
+        rows.append(dict(
             business_id=_get_or_create_business(manager.id, name, biz_map),
             source=source,
             business_name=name,
+            terminal_serial=str(row.get("terminal_serial", "")).strip(),
             target_met=str(row.get("target_met", "")),
             payment_value=float(row.get("payment_value", 0)),
             payment_vol=int(row.get("payment_vol", 0)),
             days_last_transact=str(row.get("days_last_transact", "")),
-        )
+        ))
     return rows
 
 
-def _ntt_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> dict:
-    rows = {}
+def _ntt_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> list:
+    rows = []
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
-        rows[name] = dict(
+        rows.append(dict(
             business_id=_get_or_create_business(manager.id, name, biz_map),
             source=source,
             business_name=name,
             terminal_serial=str(row.get("terminal_serial", row.get("Terminal Serial", ""))).strip(),
             days_last_transact=str(row.get("days_last_transact", "")),
-        )
+        ))
     return rows
 
 
-def _retention_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> dict:
-    rows = {}
+def _retention_rows(manager, df: pd.DataFrame, source: str, biz_map: dict) -> list:
+    rows = []
     for _, row in df.iterrows():
         name = str(row.get("Business Name", "")).strip()
         if not name:
             continue
-        rows[name] = dict(
+        rows.append(dict(
             business_id=_get_or_create_business(manager.id, name, biz_map),
             source=source,
             business_name=name,
             min_volume=str(row.get("min_volume", "")),
             vol_meet=str(row.get("vol_meet", "")),
             days_decline=str(row.get("days_decline", "")),
-        )
+        ))
     return rows
-
 
 # ── Fetch log ─────────────────────────────────────────────────────────────────
 
