@@ -27,7 +27,7 @@ from app.services.mail_service import send_extraction_failure_alert
 from app.services.cache_service import bump_manager_version
 from app.services.performance_service import compute_staff_performance
 
-from sqlalchemy import select, update, or_
+from sqlalchemy import select, update, or_, text
 
 
 class ExtractionError(Exception):
@@ -70,6 +70,11 @@ def run_extraction(manager, pdf_bytes: bytes, report_date: date, source: str = "
 
     # 3. Replace this date's rows atomically.
     try:
+        # One extraction per manager at a time. A second upload waits here until the
+        # first commits, then sees its businesses and replaces its rows cleanly.
+        # The lock is released automatically on commit or rollback.
+        db.session.execute(text("SELECT pg_advisory_xact_lock(1001, :mid)"), {"mid": manager.id})
+
         biz_map = {
             name: bid for name, bid in
             db.session.query(Business.name, Business.id).filter(Business.manager_id == manager.id)

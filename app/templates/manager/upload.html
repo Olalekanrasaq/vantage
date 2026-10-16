@@ -9,7 +9,7 @@
 </div>
 
 <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-    <form method="POST" enctype="multipart/form-data" class="space-y-5">
+    <form method="POST" enctype="multipart/form-data" class="space-y-5" onsubmit="const b=this.querySelector('button[type=submit]'); b.disabled=true; b.textContent='Processing… please wait';">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div>
@@ -40,10 +40,18 @@
 
         <button type="submit"
                 class="w-full bg-brand-900 text-white rounded-xl py-3.5 text-sm font-semibold
-                       hover:bg-brand-700 active:bg-brand-600 transition">
+                        hover:bg-brand-700 active:bg-brand-600 transition
+                        disabled:opacity-60 disabled:cursor-not-allowed">
             Upload &amp; Process Report
         </button>
     </form>
 </div>
+
+<script>
+  window.addEventListener("pageshow", () => {
+    const b = document.querySelector('form[enctype="multipart/form-data"] button[type=submit]');
+    if (b) { b.disabled = false; b.textContent = "Upload & Process Report"; }
+  });
+</script>
 
 {% endblock %}
